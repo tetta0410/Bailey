@@ -17,7 +17,9 @@
 
 | ファイル | 内容 |
 |---|---|
-| `out/ittetsu_pencase.3mf` | 本体＋プレートを 1 枚のビルドプレートに配置（これを開けばOK） |
+| `out/ittetsu_pencase_onepiece.3mf` | **一体型**: 本体の正面に絵を直接はめ込み（`pencase_body` / `art_black`）。絵のある高さは毎層色替え（0.16mmで約490回） |
+| `out/preview_onepiece.png` | 一体型の完成イメージ |
+| `out/ittetsu_pencase.3mf` | 差し替えプレート型: 本体＋プレートを 1 枚のビルドプレートに配置（色替えは数回） |
 | `out/ittetsu_pencase_body.stl` | 本体だけ |
 | `out/ittetsu_plate.3mf` | プレートだけ（`plate_base` / `plate_art_black`） |
 | `out/preview_pencase.png` | 完成イメージ |

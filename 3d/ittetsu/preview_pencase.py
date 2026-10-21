@@ -26,3 +26,14 @@ x = 0
 for v in views:
     sheet.paste(v, (x, 0)); x += v.width
 sheet.save(os.path.join(OUT, "preview_pencase.png"))
+
+# 一体型
+PINK = np.array([0.95, 0.66, 0.74])
+m, cols = colored([("view_1p_body.stl", BLUE), ("view_1p_art.stl", BLACK)])
+m2, cols2 = colored([("view_1p_body.stl", PINK), ("view_1p_art.stl", np.array([0.15, 0.25, 0.55]))])
+views = [render(m, 0, 12, cols, scale=5.2), render(m, 35, 30, cols, scale=5.0), render(m2, -25, 20, cols2, scale=5.0)]
+sheet = Image.new("RGB", (sum(v.width for v in views), views[0].height))
+x = 0
+for v in views:
+    sheet.paste(v, (x, 0)); x += v.width
+sheet.save(os.path.join(OUT, "preview_onepiece.png"))

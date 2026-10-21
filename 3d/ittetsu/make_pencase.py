@@ -15,6 +15,7 @@
   ittetsu_pencase.3mf       … 本体＋プレートを1枚のプレートに配置（AMS lite でそのまま印刷）
   ittetsu_pencase_body.stl  … 本体だけ
   ittetsu_plate.3mf         … 絵のプレートだけ（base / art の2パーツ）
+  ittetsu_pencase_onepiece.3mf … 一体型（本体の正面に絵を直接はめ込み。色替えは絵の高さ分の毎層）
 """
 import math
 import os
@@ -53,6 +54,8 @@ CLEAR = 0.2         # 溝の奥行き方向のすき間
 CLEAR_X = 0.35      # 溝の幅方向の広げ量（斜面で片側 約0.2mm のすき間になる）
 INLAY = 0.6         # 黒い絵の深さ（プレート表面に面一ではめ込み）
 ART_H = 80.0        # 絵の高さ
+INLAY_1P = 0.8      # 一体型での絵の深さ
+ART_Z = 48.0        # 一体型での絵の中心の高さ
 
 
 def rbox(x0, y0, x1, y1, r):
@@ -103,19 +106,21 @@ def make_plate():
     return base, art_m, art
 
 
-def make_body():
+def make_body(front=FRONT, groove=True):
     outer = rbox(0, 0, W, D, CORNER)
-    cavity = rbox(WALL, FRONT, W - WALL, D - WALL, 2.0)
+    cavity = rbox(WALL, front, W - WALL, D - WALL, 2.0)
     body = extrude(outer, H).difference(extrude(cavity, H, FLOOR))
-    mid_y = (FRONT + D - WALL) / 2
+    mid_y = (front + D - WALL) / 2
     walls = shapely.union_all([
-        shapely.box(SPLIT_X, FRONT - 0.5, SPLIT_X + DIV, D - WALL + 0.5),          # 縦の仕切り
+        shapely.box(SPLIT_X, front - 0.5, SPLIT_X + DIV, D - WALL + 0.5),          # 縦の仕切り
         shapely.box(SPLIT_X, mid_y - DIV / 2, W - WALL + 0.5, mid_y + DIV / 2),     # 右の前後仕切り
     ])
     body = body.union(extrude(walls, DIV_TOP - 0.5, 0.5))
     # 右手前の部屋は底上げ（中身は印刷時にインフィルになる）
-    raised = shapely.box(SPLIT_X, FRONT - 0.5, W - WALL + 0.5, mid_y)
+    raised = shapely.box(SPLIT_X, front - 0.5, W - WALL + 0.5, mid_y)
     body = body.union(extrude(raised, RAISE - 0.5, 0.5))
+    if not groove:
+        return body
     # 正面のアリ溝（上から差し込む, 表面側が狭い）
     groove = dovetail(PW, H, T + CLEAR, grow=CLEAR_X)
     # 平置き座標 → 立てた座標: (x, y=長さ, z=厚み) → (x, 厚み方向=+Y, 高さ=Z)
@@ -128,6 +133,22 @@ def make_body():
     g.apply_translation([0, -0.01, 0])
     body = body.difference(g)
     return body
+
+
+def make_onepiece():
+    """一体型: 本体の正面に絵を直接はめ込む（正面の壁は WALL の厚み, 絵の深さ INLAY_1P）。"""
+    body = make_body(front=WALL + 0.4, groove=False)
+    art = affinity.translate(art_shapes(), 0, ART_Z)
+
+    def on_front(depth, extra=0.0):
+        m = extrude(art, depth + extra, -extra)         # z: 外側へ extra はみ出させて確実に切る
+        v = m.vertices.copy()
+        m.vertices = np.column_stack([v[:, 0] + W / 2, v[:, 2], v[:, 1]])
+        m.fix_normals()
+        return m
+
+    body = body.difference(on_front(INLAY_1P, 0.05))
+    return body, on_front(INLAY_1P)
 
 
 def stand_plate(m):
@@ -162,6 +183,19 @@ def main():
     sc.export(os.path.join(OUT, "ittetsu_pencase.3mf"))
     allb = sc.bounds
     print("build plate footprint:", (allb[1] - allb[0]).round(1))
+
+    # 一体型（本体に直接プリント）
+    one, one_art = make_onepiece()
+    sc1 = trimesh.Scene()
+    sc1.add_geometry(one, node_name="pencase_body", geom_name="pencase_body")
+    sc1.add_geometry(one_art, node_name="art_black", geom_name="art_black")
+    sc1.export(os.path.join(OUT, "ittetsu_pencase_onepiece.3mf"))
+    one.export(os.path.join(OUT, "view_1p_body.stl"))
+    one_art.export(os.path.join(OUT, "view_1p_art.stl"))
+    for name, m in [("1p_body", one), ("1p_art", one_art)]:
+        print(f"{name:7s} {m.extents.round(1)} mm watertight={m.is_watertight} vol={m.volume/1000:.1f}cm3")
+    ab = one_art.bounds
+    print("1p art z range:", ab[:, 2].round(1), " y range:", ab[:, 1].round(2))
 
     # プレビュー用（組み立て状態）
     stand_plate(base).export(os.path.join(OUT, "view_plate.stl"))
