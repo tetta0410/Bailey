@@ -2,7 +2,7 @@
 
 QRコードはベイリーのページ (GitHub Pages) を指す。
 平置きで印刷し、QR・名前・耳の黒は上面 0.6mm だけのはめ込みなので、色替えは最後の数層だけ。
-裏面には Dad / Mam の電話番号を黒ではめ込み（QRが読めないとき用）。裏の黒は最初の数層だけ。
+裏面には Dad / Mom の電話番号を黒ではめ込み（QRが読めないとき用）。裏の黒は最初の数層だけ。
 
 出力: 3d/out/bailey_qr_charm.3mf  (charm_white / charm_black の2パーツ, 1つのオブジェクト)
 """
@@ -23,7 +23,7 @@ from make_bailey import extrude, mirror, text_poly  # noqa: E402
 from make_pencase import write_3mf  # noqa: E402
 
 URL = "https://tetta0410.github.io/Bailey/"
-CONTACTS = ["Dad 090-7828-9179", "Mam 080-4472-0384"]
+CONTACTS = ["Dad 090-7828-9179", "Mom 080-4472-0384"]
 MONO_BOLD = FontProperties(fname="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf")
 OUT = os.path.join(HERE, "out")
 
