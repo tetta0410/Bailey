@@ -14,7 +14,6 @@ import segno
 import shapely
 from shapely import affinity
 from matplotlib.font_manager import FontProperties
-from scipy.interpolate import splev, splprep
 from shapely.geometry import Point, Polygon
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,50 +42,62 @@ def qr_shapes():
     return shapely.union_all(cells), n, qr.version, qr.error
 
 
-def smooth(points, n=240, mirror_x=False):
-    """制御点を通るなめらかな閉曲線 (周期スプライン)。mirror_x なら右半分の点から左右対称に作る。"""
-    pts = np.array(points, float)
-    if mirror_x:
-        pts = np.vstack([pts, pts[-2:0:-1] * [-1, 1]])
-    tck, _ = splprep([pts[:, 0], pts[:, 1]], s=0, per=True)
-    x, y = splev(np.linspace(0, 1, n, endpoint=False), tck)
-    return Polygon(np.column_stack([x, y])).buffer(0)
+# ポップな頭: 角の丸い四角（スーパー楕円）。HEAD_A=横半径, HEAD_B=縦半径, HEAD_P=角の丸さ
+HEAD_A, HEAD_B, HEAD_P = 20.5, 24.5, 3.2
+# 右の耳（大きめの丸い三角, 外向き）。三角を太らせて角を丸くする
+EAR_TRI = [(10.5, 41.0), (17.0, 35.5), (20.5, 50.0)]
+EAR_ROUND = 4.6
+BORDER = 1.0      # 黒いフチの幅（シール風）
 
 
-# ボーダーコリーの頭（右半分, 下のあご → 頬のもふもふ → 頭のてっぺん）
-HEAD = [(0, 0.0), (6, 0.6), (11.5, 2.6), (15.6, 6.0), (18.9, 10.4), (18.6, 15.6), (20.4, 20.6),
-        (19.7, 27.0), (19.5, 33.0), (18.6, 39.0), (16.2, 44.6), (12.2, 48.8), (6.2, 50.7), (0, 51.2)]
-# 右の耳（立ち耳, 先は丸く少し外向き）
-EAR = [(8.6, 47.6), (10.8, 52.8), (13.8, 58.0), (17.0, 61.2), (19.4, 61.0), (20.5, 57.6),
-       (20.3, 51.4), (18.8, 44.8), (14.0, 44.6)]
+def superellipse(a, b, p, cy, n=360):
+    t = np.linspace(0, 2 * np.pi, n, endpoint=False)
+    c, s_ = np.cos(t), np.sin(t)
+    x = a * np.sign(c) * np.abs(c) ** (2 / p)
+    y = b * np.sign(s_) * np.abs(s_) ** (2 / p) + cy
+    return Polygon(np.column_stack([x, y]))
+
+
+def paw(cx, cy, size=4.2):
+    """肉球（大きいパッド＋指4つ）。size はだいたいの高さ。"""
+    k = size / 4.2
+    pad = affinity.scale(Point(0, 0).buffer(1.0, quad_segs=24), 1.45 * k, 1.15 * k)
+    toes = [Point(x * k, y * k).buffer(0.62 * k, quad_segs=16)
+            for x, y in [(-1.55, 1.25), (-0.55, 2.05), (0.55, 2.05), (1.55, 1.25)]]
+    g = shapely.union_all([affinity.translate(pad, 0, -0.35 * k), *toes])
+    return affinity.translate(g, cx, cy - 0.5 * k)
 
 
 def charm():
     qr, n, ver, err = qr_shapes()
     side = (n + 2 * QUIET) * MODULE                 # 白い余白込みの QR の大きさ
-    qr_y0 = 9.3                                     # 余白込み QR の下端
+    qr_cy = 25.0
+    qr_y0 = qr_cy - side / 2
     qr = affinity.translate(qr, -n * MODULE / 2, qr_y0 + QUIET * MODULE)
-    head = smooth(HEAD, mirror_x=True)
-    ear = smooth(EAR)
+    head = superellipse(HEAD_A, HEAD_B, HEAD_P, HEAD_B)
+    ear = Polygon(EAR_TRI).buffer(EAR_ROUND, quad_segs=24)
     ears = shapely.union_all([ear, mirror(ear)])
-    hole = Point(0, 46.3).buffer(2.1, quad_segs=24)
+    hole = Point(0, 44.2).buffer(2.0, quad_segs=24)
     outline = shapely.union_all([head, ears]).difference(hole)
-    ears_black = ears.difference(head.buffer(0.3)).intersection(outline.buffer(-0.5))
-    name = affinity.translate(text_poly("BAILEY", 5.0), 0, 5.6)
+    ears_black = ears.difference(head.buffer(0.4))
+    border = outline.difference(outline.buffer(-BORDER))
+    name = affinity.translate(text_poly("BAILEY", 4.6), 0, 6.3)
+    nb = name.bounds
+    paws = shapely.union_all([paw(nb[0] - 3.8, 6.3, 3.9), paw(nb[2] + 3.8, 6.3, 3.9)])
     qr = qr.buffer(0.02, join_style="mitre")  # 斜めに角だけ接するマスをつなげる（非多様体を防ぐ）
-    front = shapely.union_all([qr, name, ears_black]).intersection(outline.buffer(-0.6))
-    # 裏の電話番号（等幅フォントで桁をそろえ、裏から読めるよう左右反転）＋ 耳も黒
+    front = shapely.union_all([qr, name, paws, ears_black, border]).intersection(outline)
+    # 裏の電話番号（等幅フォントで桁をそろえ、裏から読めるよう左右反転）＋ 耳とフチも黒
     lines = [text_poly(t, 3.2, MONO_BOLD) for t in CONTACTS]
     gap = 6.6
-    phone = shapely.union_all([affinity.translate(mirror(l), 0, 25.0 + gap / 2 - i * gap)
+    phone = shapely.union_all([affinity.translate(mirror(l), 0, 24.0 + gap / 2 - i * gap)
                                for i, l in enumerate(lines)])
-    back = shapely.union_all([phone, ears_black])
-    # 白い縁が十分あるか確認
-    margin = lambda g: outline.exterior.distance(g)
+    back = shapely.union_all([phone, ears_black, border]).intersection(outline)
+    # フチの内側に白が十分あるか確認
+    inner = outline.buffer(-BORDER).exterior
     info = dict(n=n, version=ver, error=err, qr_side=side,
                 size=(outline.bounds[2] - outline.bounds[0], outline.bounds[3] - outline.bounds[1]),
-                margin_qr=margin(shapely.box(-side / 2, qr_y0, side / 2, qr_y0 + side)),
-                margin_name=margin(name), margin_phone=margin(phone),
+                margin_qr=inner.distance(shapely.box(-side / 2, qr_y0, side / 2, qr_y0 + side)),
+                margin_name=inner.distance(shapely.union_all([name, paws])), margin_phone=inner.distance(phone),
                 hole_wall=min(hole.exterior.distance(outline.exterior), hole.distance(qr)))
     return outline, front, back, info
 
