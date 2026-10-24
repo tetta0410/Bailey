@@ -15,7 +15,7 @@ BG, WHITE, BLACK, ENG = (232, 226, 214), (246, 245, 240), (30, 30, 32), (200, 19
 
 def draw(img, g, color, ox, h, flip=False):
     """ポリゴンごとに穴を抜いたマスクを作って塗る（穴の中の別ポリゴンを消さないように）。"""
-    tr = lambda xy: [((mq.W - x if flip else x) * PX + ox, (h - y) * PX + 20) for x, y in xy]
+    tr = lambda xy: [((-x if flip else x) * PX + ox, (h - y) * PX + 20) for x, y in xy]
     total = Image.new("L", img.size, 0)
     for p in getattr(g, "geoms", [g]):
         if p.is_empty:
@@ -29,14 +29,16 @@ def draw(img, g, color, ox, h, flip=False):
     img.paste(color, mask=total)
 
 
-outline, black, phone, _ = mq.charm()
+outline, front, back, _ = mq.charm()
 h = outline.bounds[3]
-img = Image.new("RGB", (int(mq.W * PX * 2 + 100), int(h * PX + 40)), BG)
-draw(img, outline, WHITE, 20, h)
-draw(img, black, BLACK, 20, h)
-ox = int(mq.W * PX + 80)
-draw(img, outline, WHITE, ox, h, flip=True)        # 裏（左右反転して見る）
-draw(img, phone, BLACK, ox, h, flip=True)
+w = outline.bounds[2] - outline.bounds[0]
+img = Image.new("RGB", (int(w * PX * 2 + 120), int(h * PX + 40)), BG)
+ox1 = int(w / 2 * PX + 30)
+draw(img, outline, WHITE, ox1, h)
+draw(img, front, BLACK, ox1, h)
+ox2 = int(w * 1.5 * PX + 90)
+draw(img, outline, WHITE, ox2, h, flip=True)       # 裏（ひっくり返して見た向き）
+draw(img, back, BLACK, ox2, h, flip=True)
 out = os.path.join(mq.OUT, "preview_qr_charm.png")
 img.save(out)
 

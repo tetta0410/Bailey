@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `bailey_keychain.3mf` | 顔のキーホルダー（黒/白/ピンク/赤） | 32×47×3.8 mm | 0.12〜0.16 mm, AMS lite |
 | `bailey_tag.3mf` | 骨型の名札（表 BAILEY / 裏 電話番号を彫刻） | 58×26×3.8 mm | 0.12 mm, AMS lite |
-| `bailey_qr_charm.3mf` | **QR付き迷子札チャーム**。QR → https://tetta0410.github.io/Bailey/ 、裏に Dad / Mam の電話番号（黒） | 39×56×5 mm | 0.2 mm, AMS lite（白＋黒）, QR面を上にしたまま |
+| `bailey_qr_charm.3mf` | **QR付き迷子札チャーム**。QR → https://tetta0410.github.io/Bailey/ 、ボーダーコリーの頭の形, 耳は表裏とも黒, 裏に Dad / Mam の電話番号（黒） | 41×61×5 mm | 0.2 mm, AMS lite（白＋黒）, QR面を上にしたまま |
 | `bailey_lithophane.stl` | 写真のリトファン（光に透かすと写真が浮かぶ） | 106×139×4.2 mm | 白PLA, 0.12 mm, インフィル100%, 縦置き |
 
 ## マルチカラーの読み込み方
