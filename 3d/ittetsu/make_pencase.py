@@ -58,6 +58,57 @@ INLAY_1P = 0.8      # 一体型での絵の深さ
 ART_Z = 48.0        # 一体型での絵の中心の高さ
 
 
+def write_3mf(path, objects):
+    """Bambu Studio 向けの 3MF を書く。
+
+    objects: [(オブジェクト名, (x, y) ベッド上の中心, [(パーツ名, mesh, フィラメント番号), ...]), ...]
+    各オブジェクトは「パーツを持つ1つのオブジェクト」(components) として書くので、
+    読み込み時にパーツが別オブジェクトに分かれない。
+    """
+    import zipfile
+    from xml.sax.saxutils import quoteattr
+
+    res, build, cfg = [], [], []
+    oid = 1
+    for oname, (cx, cy), parts in objects:
+        lo = np.min([m.bounds[0] for _, m, _ in parts], axis=0)
+        hi = np.max([m.bounds[1] for _, m, _ in parts], axis=0)
+        center = np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]])
+        comp_ids, part_cfg = [], []
+        for pname, m, ext in parts:
+            v = m.vertices - center
+            vx = "".join(f'<vertex x="{a:.4f}" y="{b:.4f}" z="{c:.4f}"/>' for a, b, c in v)
+            tx = "".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in m.faces)
+            res.append(f'<object id="{oid}" type="model" name={quoteattr(pname)}><mesh><vertices>{vx}</vertices>'
+                       f'<triangles>{tx}</triangles></mesh></object>')
+            comp_ids.append(oid)
+            part_cfg.append(f'<part id="{oid}" subtype="normal_part"><metadata key="name" value={quoteattr(pname)}/>'
+                            f'<metadata key="extruder" value="{ext}"/></part>')
+            oid += 1
+        comps = "".join(f'<component objectid="{i}"/>' for i in comp_ids)
+        res.append(f'<object id="{oid}" type="model" name={quoteattr(oname)}><components>{comps}</components></object>')
+        build.append(f'<item objectid="{oid}" transform="1 0 0 0 1 0 0 0 1 {cx} {cy} 0" printable="1"/>')
+        cfg.append(f'<object id="{oid}"><metadata key="name" value={quoteattr(oname)}/>'
+                   f'<metadata key="extruder" value="{parts[0][2]}"/>{"".join(part_cfg)}</object>')
+        oid += 1
+    model = ('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" '
+             'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+             f'<resources>{"".join(res)}</resources><build>{"".join(build)}</build></model>')
+    types = ('<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+             '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>'
+             '<Default Extension="config" ContentType="text/xml"/></Types>')
+    rels = ('<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+            'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
+    settings = f'<?xml version="1.0" encoding="UTF-8"?>\n<config>{"".join(cfg)}</config>'
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", types)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("3D/3dmodel.model", model)
+        z.writestr("Metadata/model_settings.config", settings)
+
+
 def rbox(x0, y0, x1, y1, r):
     return shapely.box(x0 + r, y0 + r, x1 - r, y1 - r).buffer(r, quad_segs=16)
 
@@ -165,31 +216,20 @@ def main():
     body = make_body()
     base, art_m, art = make_plate()
 
-    plate = trimesh.Scene()
-    plate.add_geometry(base, node_name="plate_base", geom_name="plate_base")
-    plate.add_geometry(art_m, node_name="plate_art_black", geom_name="plate_art_black")
-    plate.export(os.path.join(OUT, "ittetsu_plate.3mf"))
+    write_3mf(os.path.join(OUT, "ittetsu_plate.3mf"),
+              [("ittetsu_plate", (90, 90), [("plate_base", base, 1), ("plate_art_black", art_m, 2)])])
     body.export(os.path.join(OUT, "ittetsu_pencase_body.stl"))
 
     # 1枚のビルドプレート (180x180) に並べる: 本体を左、プレートを右に
-    sc = trimesh.Scene()
-    b2 = body.copy(); b2.apply_translation([-W / 2 - 42, -D / 2, 0])
-    pb, pa = base.copy(), art_m.copy()
-    for m in (pb, pa):
-        m.apply_translation([W / 2 - 42 + 8 + PW / 2, -PH / 2, 0])
-    sc.add_geometry(b2, node_name="pencase_body", geom_name="pencase_body")
-    sc.add_geometry(pb, node_name="plate_base", geom_name="plate_base")
-    sc.add_geometry(pa, node_name="plate_art_black", geom_name="plate_art_black")
-    sc.export(os.path.join(OUT, "ittetsu_pencase.3mf"))
-    allb = sc.bounds
-    print("build plate footprint:", (allb[1] - allb[0]).round(1))
+    write_3mf(os.path.join(OUT, "ittetsu_pencase.3mf"), [
+        ("pencase_body", (50, 90), [("pencase_body", body, 1)]),
+        ("ittetsu_plate", (50 + W / 2 + 8 + PW / 2, 90), [("plate_base", base, 1), ("plate_art_black", art_m, 2)]),
+    ])
 
     # 一体型（本体に直接プリント）
     one, one_art = make_onepiece()
-    sc1 = trimesh.Scene()
-    sc1.add_geometry(one, node_name="pencase_body", geom_name="pencase_body")
-    sc1.add_geometry(one_art, node_name="art_black", geom_name="art_black")
-    sc1.export(os.path.join(OUT, "ittetsu_pencase_onepiece.3mf"))
+    write_3mf(os.path.join(OUT, "ittetsu_pencase_onepiece.3mf"),
+              [("ittetsu_pencase", (90, 90), [("pencase_body", one, 1), ("art_black", one_art, 2)])])
     one.export(os.path.join(OUT, "view_1p_body.stl"))
     one_art.export(os.path.join(OUT, "view_1p_art.stl"))
     for name, m in [("1p_body", one), ("1p_art", one_art)]:
