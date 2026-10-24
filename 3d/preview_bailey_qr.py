@@ -36,7 +36,7 @@ draw(img, outline, WHITE, 20, h)
 draw(img, black, BLACK, 20, h)
 ox = int(mq.W * PX + 80)
 draw(img, outline, WHITE, ox, h, flip=True)        # 裏（左右反転して見る）
-draw(img, phone, ENG, ox, h, flip=True)
+draw(img, phone, BLACK, ox, h, flip=True)
 out = os.path.join(mq.OUT, "preview_qr_charm.png")
 img.save(out)
 
