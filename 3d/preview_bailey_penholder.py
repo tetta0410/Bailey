@@ -19,8 +19,9 @@ render = _mod.render
 
 WHITE, BLACK, PINK = np.array([0.97, 0.96, 0.93]), np.array([0.11, 0.11, 0.13]), np.array([0.94, 0.53, 0.60])
 
-body, black, pink = mb.main()
-meshes = [body, black, pink]
+photo = sys.argv[1] if len(sys.argv) > 1 else "tongue"
+body, black, pink = mb.main(photo)
+meshes = [m for m in (body, black, pink) if m is not None]
 cols = np.vstack([np.tile(c, (len(m.faces), 1)) for m, c in zip(meshes, [WHITE, BLACK, PINK])])
 m = trimesh.util.concatenate(meshes)
 views = [render(m, 0, 10, cols, scale=5.2), render(m, 32, 28, cols, scale=5.0), render(m, 12, 68, cols, scale=5.2)]
@@ -28,4 +29,5 @@ sheet = Image.new("RGB", (sum(v.width for v in views), views[0].height))
 x = 0
 for v in views:
     sheet.paste(v, (x, 0)); x += v.width
-sheet.save(os.path.join(mb.OUT, "preview_bailey_penholder.png"))
+sheet.save(os.path.join(mb.OUT, "preview_bailey_penholder.png" if photo == "tongue"
+                         else "preview_bailey_penholder_puppy.png"))
