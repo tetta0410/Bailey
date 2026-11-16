@@ -3,16 +3,17 @@
 正面写真から、黒い毛・鼻・口・目（と舌のピンク）をそのまま写し取り、
 白い本体の正面に面一ではめ込む。白い毛は本体の白がそのまま見える。中の仕切りはなし。
 
-写真は2種類:
+写真は3種類:
   tongue … photos/bailey_front2.jpg（舌ぺろ。白・黒・ピンクの3色）
   puppy  … photos/bailey_puppy.jpg（子犬のころ。白・黒の2色。背景・リードは除く）
+  okaeri … photos/bailey_okaeri.jpg（帰宅したときに飛びついてくる「おかえり」。白・黒・ピンク。ズボンは除く）
 
-印刷の向きを2通り用意する（<name> は bailey_penholder / bailey_penholder_puppy）:
+印刷の向きを2通り用意する（<name> は bailey_penholder / bailey_penholder_puppy / bailey_penholder_okaeri）:
   <name>_facedown.3mf … 【おすすめ】顔を下にして倒した向き。絵は最初の 0.8mm だけなので
                          色替えは数回。背面が天井になるので、中にサポートが必要。
   <name>.3mf          … 立てた向き。サポート不要だが、絵のある高さで毎層色替え。
 
-使い方: python3 3d/make_bailey_penholder.py [tongue|puppy]   （省略時は両方）
+使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri]   （省略時はすべて）
 """
 import os
 import sys
@@ -34,6 +35,7 @@ from make_pencase import write_3mf  # noqa: E402
 OUT = os.path.join(HERE, "out")
 PHOTO = os.path.join(HERE, "photos", "bailey_front2.jpg")
 PUPPY = os.path.join(HERE, "photos", "bailey_puppy.jpg")
+OKAERI = os.path.join(HERE, "photos", "bailey_okaeri.jpg")
 
 # ---- 本体 (mm)。仕切りなしの四角いペン立て
 W, D, H = 90.0, 75.0, 100.0
@@ -58,6 +60,54 @@ PUPPY_OUTLINE = [(60, 330), (150, 170), (320, 120), (560, 190), (800, 200), (950
                  (750, 1270), (450, 1270), (330, 1120), (230, 960), (160, 760), (150, 560), (80, 420)]
 PUPPY_LEASH = [(1040, 727), (1107, 715), (1300, 768), (1300, 852), (1133, 812), (1053, 800)]
 PUPPY_BOTTOM = 1260        # これより下（足）は使わない
+
+
+# ---- 絵（おかえりの写真）。写真の右端で顔が切れているので、絵の右端を正面の右端にそろえる
+OKAERI_FIT = (82.0, 92.0)
+OKAERI_T = 85              # これより暗く、青みのない画素を黒い毛とみなす（紺のズボンは青みで除く）
+OKAERI_OUTLINE = [(380, 860), (560, 760), (800, 700), (1000, 640), (1180, 480), (1380, 420), (1470, 520),
+                  (1500, 700), (1512, 900), (1512, 1560), (1300, 1640), (1180, 1760), (1000, 1720),
+                  (900, 1560), (700, 1460), (520, 1420), (420, 1350), (380, 1200), (380, 1000)]
+OKAERI_MOUTH = [(505, 1160), (560, 1120), (660, 1120), (735, 1190), (740, 1300), (690, 1360),
+                (560, 1365), (500, 1300)]   # 舌を探す範囲（口の中）
+# 目: (中心x, 中心y, 半径, 瞳を黒にするしきい値, 光や縁を白にするしきい値)
+OKAERI_EYES = [(1070, 937, 40, 110, 150), (1207, 1285, 55, None, 26)]
+
+
+def trace_okaeri():
+    """おかえりの写真 → (黒の2値画像, ピンクの2値画像)。紺のズボン・床は除く。"""
+    from PIL import ImageDraw
+    im = ImageOps.exif_transpose(Image.open(OKAERI)).convert("RGB")
+    rgb = np.asarray(im).astype(float)
+    r, g, b = (ndi.gaussian_filter(rgb[..., i], 2) for i in range(3))
+    gray = ndi.gaussian_filter(rgb.mean(axis=2), 1.5)
+
+    def poly_mask(pts):
+        m = Image.new("L", im.size, 0)
+        ImageDraw.Draw(m).polygon(pts, fill=255)
+        return np.asarray(m) > 0
+
+    dog, mouth = poly_mask(OKAERI_OUTLINE), poly_mask(OKAERI_MOUTH)
+    navy = (b - r) > 18
+    # 舌: 口の中の、赤みがあって暗すぎず明るすぎない（歯ではない）部分
+    pink = mouth & ((r - g) > 8) & (gray > 30) & (gray < 170)
+    pink = morphology.opening(pink, morphology.disk(3))
+    pink = morphology.remove_small_objects(pink, max_size=1500)
+    pink = ndi.binary_fill_holes(morphology.closing(pink, morphology.disk(6)))
+    black = (gray < OKAERI_T) & dog & ~navy & ~morphology.dilation(pink, morphology.disk(2))
+    # 目
+    yy, xx = np.mgrid[0:gray.shape[0], 0:gray.shape[1]]
+    for cx, cy, rad, t_dark, t_light in OKAERI_EYES:
+        eye = (xx - cx) ** 2 + (yy - cy) ** 2 < rad ** 2
+        if t_dark is not None:
+            black |= eye & (gray < t_dark)
+        light = morphology.remove_small_objects(eye & (gray > t_light), max_size=15)
+        black &= ~morphology.dilation(light, morphology.disk(2))
+    black = morphology.closing(black, morphology.disk(3))
+    black = morphology.opening(black, morphology.disk(4))
+    black = morphology.remove_small_objects(black, max_size=200)
+    black = morphology.remove_small_holes(black, max_size=80)
+    return black, pink
 
 
 def trace_tongue():
@@ -160,6 +210,16 @@ def placed_art(photo="tongue"):
         b, p = mask_to_shape(black, mm), mask_to_shape(pink, mm)
         t = lambda g: affinity.translate(g, -ART_W / 2, H)
         return t(b), t(p)
+    if photo == "okaeri":
+        black, pink = trace_okaeri()
+        ys, xs = np.nonzero(black | pink)
+        y0, x0 = ys.min(), xs.min()
+        black, pink = black[y0:ys.max() + 1, x0:xs.max() + 1], pink[y0:ys.max() + 1, x0:xs.max() + 1]
+        hpx, wpx = black.shape
+        mm = min(OKAERI_FIT[0] / wpx, OKAERI_FIT[1] / hpx)
+        right = W / 2 - CORNER - 1.0               # 正面の平らな部分の右端（中央基準）
+        t = lambda g: affinity.translate(g, right - wpx * mm, H / 2 + hpx * mm / 2)
+        return t(mask_to_shape(black, mm)), t(mask_to_shape(pink, mm))
     black, _ = trace_puppy()
     ys, xs = np.nonzero(black)
     black = black[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
@@ -198,7 +258,8 @@ def face_down(m):
 
 def main(photo="tongue"):
     black, pink = placed_art(photo)
-    name = "bailey_penholder" if photo == "tongue" else "bailey_penholder_puppy"
+    name = {"tongue": "bailey_penholder", "puppy": "bailey_penholder_puppy",
+            "okaeri": "bailey_penholder_okaeri"}[photo]
     body = make_body().difference(on_front(shapely.union_all([black, pink]), INLAY, 0.05))
     black_m = on_front(black, INLAY)
     parts = [("body_white", body, 1), ("face_black", black_m, 2)]
@@ -229,5 +290,5 @@ def main(photo="tongue"):
 
 
 if __name__ == "__main__":
-    for photo in (sys.argv[1:] or ["tongue", "puppy"]):
+    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri"]):
         main(photo)

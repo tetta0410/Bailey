@@ -30,4 +30,4 @@ x = 0
 for v in views:
     sheet.paste(v, (x, 0)); x += v.width
 sheet.save(os.path.join(mb.OUT, "preview_bailey_penholder.png" if photo == "tongue"
-                         else "preview_bailey_penholder_puppy.png"))
+                         else f"preview_bailey_penholder_{photo}.png"))
