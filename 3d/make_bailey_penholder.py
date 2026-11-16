@@ -3,17 +3,20 @@
 正面写真から、黒い毛・鼻・口・目（と舌のピンク）をそのまま写し取り、
 白い本体の正面に面一ではめ込む。白い毛は本体の白がそのまま見える。中の仕切りはなし。
 
-写真は3種類:
+写真は4種類:
   tongue … photos/bailey_front2.jpg（舌ぺろ。白・黒・ピンクの3色）
   puppy  … photos/bailey_puppy.jpg（子犬のころ。白・黒の2色。背景・リードは除く）
   okaeri … photos/bailey_okaeri.jpg（帰宅したときに飛びついてくる「おかえり」。白・黒・ピンク。ズボンは除く）
+  ears   … photos/bailey_ears.jpg（耳まで写った正面。白・黒・ピンク。耳は箱の縁から上に飛び出す）
 
-印刷の向きを2通り用意する（<name> は bailey_penholder / bailey_penholder_puppy / bailey_penholder_okaeri）:
+中は真ん中の仕切りで左右2部屋。仕切りは縁より 10mm 低い。
+
+印刷の向きを2通り用意する（<name> は bailey_penholder / _puppy / _okaeri / _ears）:
   <name>_facedown.3mf … 【おすすめ】顔を下にして倒した向き。絵は最初の 0.8mm だけなので
                          色替えは数回。背面が天井になるので、中にサポートが必要。
   <name>.3mf          … 立てた向き。サポート不要だが、絵のある高さで毎層色替え。
 
-使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri]   （省略時はすべて）
+使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri|ears]   （省略時はすべて）
 """
 import os
 import sys
@@ -36,12 +39,15 @@ OUT = os.path.join(HERE, "out")
 PHOTO = os.path.join(HERE, "photos", "bailey_front2.jpg")
 PUPPY = os.path.join(HERE, "photos", "bailey_puppy.jpg")
 OKAERI = os.path.join(HERE, "photos", "bailey_okaeri.jpg")
+EARS = os.path.join(HERE, "photos", "bailey_ears.jpg")
 
 # ---- 本体 (mm)。仕切りなしの四角いペン立て
 W, D, H = 90.0, 75.0, 100.0
 WALL, FRONT, FLOOR = 2.4, 2.8, 2.4   # 正面ははめ込みの分だけ厚め
 CORNER = 3.0                         # 角の丸み（小さめにして正面の平らな幅を広く取る）
 INLAY = 0.8                          # 絵のはめ込み深さ
+DIV = 2.0                            # 真ん中の仕切りの厚み
+DIV_TOP = H - 10.0                   # 仕切りの高さ（縁より低くして物を取りやすく）
 
 # ---- 絵（舌ぺろの写真）
 ART_W = 82.0          # 絵の幅（正面の平らな部分は W - 2*CORNER = 84mm）
@@ -72,6 +78,48 @@ OKAERI_MOUTH = [(505, 1160), (560, 1120), (660, 1120), (735, 1190), (740, 1300),
                 (560, 1365), (500, 1300)]   # 舌を探す範囲（口の中）
 # 目: (中心x, 中心y, 半径, 瞳を黒にするしきい値, 光や縁を白にするしきい値)
 OKAERI_EYES = [(1070, 937, 40, 110, 150), (1207, 1285, 55, None, 26)]
+
+
+# ---- 絵（耳まで写った写真）。耳は箱の縁から上に飛び出す
+EARS_W = 82.0              # 頭（耳を含む）の幅
+EARS_RIM_Y = 330           # 写真のこの行を箱の縁 (H) にそろえる（これより上の耳が飛び出す）
+EARS_PLATE = 4.0           # 飛び出す耳の板の厚み
+EARS_ROUND = 2.5           # 写真の上端で切れた耳の先を丸める半径 (mm)
+EARS_EYES = [(420, 490, 85), (790, 465, 85)]   # (中心x, 中心y, 光や縁を白にするしきい値)
+
+
+def trace_ears():
+    """耳まで写った写真 → (黒, ピンク)。胸・首輪・テレビ・クッションは除く。"""
+    im = ImageOps.exif_transpose(Image.open(EARS)).convert("RGB")
+    rgb = np.asarray(im).astype(float)
+    gray = ndi.gaussian_filter(rgb.mean(axis=2), 1.2)
+    hsv = np.asarray(im.convert("HSV")).astype(float)
+    hue, sat, val = (ndi.gaussian_filter(hsv[..., i], 1.5) for i in range(3))
+    pink = ((hue > 225) | (hue < 12)) & (sat > 60) & (val > 100)
+    pink[:, 1150:] = False
+    pink = morphology.remove_small_objects(pink, max_size=2000)
+    pink = ndi.binary_fill_holes(morphology.closing(pink, morphology.disk(6)))
+    black = (gray < BLACK_T) & ~morphology.dilation(pink, morphology.disk(2))
+    lab, n = ndi.label(black)
+    keep = np.zeros(n + 1, bool)
+    for i, sl in enumerate(ndi.find_objects(lab), 1):
+        # 頭につながる部分だけ（胸の黒・首輪は下、テレビやクッションは右）
+        if sl[0].start < 1150 and sl[1].start < 1170 and (lab[sl] == i).sum() > 300:
+            keep[i] = True
+    black = keep[lab]
+    g1 = ndi.gaussian_filter(rgb.mean(axis=2), 1.0)
+    for cx, cy, thr in EARS_EYES:
+        y0, y1, x0, x1 = cy - 80, cy + 80, cx - 90, cx + 90
+        white = morphology.remove_small_objects(g1[y0:y1, x0:x1] > thr, max_size=25)
+        white = morphology.dilation(white, morphology.disk(2))
+        yy, xx = np.mgrid[y0:y1, x0:x1]
+        inside = ((xx - cx) / 85) ** 2 + ((yy - cy) / 70) ** 2 < 1
+        black[y0:y1, x0:x1][white & inside] = False
+    black = morphology.closing(black, morphology.disk(3))
+    black = morphology.opening(black, morphology.disk(4))
+    black = morphology.remove_small_objects(black, max_size=150)
+    black = morphology.remove_small_holes(black, max_size=60)
+    return black, pink
 
 
 def trace_okaeri():
@@ -210,6 +258,30 @@ def placed_art(photo="tongue"):
         b, p = mask_to_shape(black, mm), mask_to_shape(pink, mm)
         t = lambda g: affinity.translate(g, -ART_W / 2, H)
         return t(b), t(p)
+    if photo == "ears":
+        black, pink = trace_ears()
+        ys, xs = np.nonzero(black | pink)
+        x0, x1 = xs.min(), xs.max() + 1
+        black, pink = black[:, x0:x1], pink[:, x0:x1]
+        mm = EARS_W / (x1 - x0)
+        t = lambda g: affinity.translate(g, -EARS_W / 2, H + EARS_RIM_Y * mm)
+        b, p = t(mask_to_shape(black, mm)), t(mask_to_shape(pink, mm))
+        # 写真の上端で切れた耳の先を、耳の向き（外向き）に合わせて三角に伸ばしてから丸める
+        cut_y = H + EARS_RIM_Y * mm
+        tips = []
+        for ear in getattr(b, "geoms", [b]):
+            xs_top = [x for x, y in ear.exterior.coords if y > cut_y - 0.3]
+            if len(xs_top) < 2:
+                continue
+            xl, xr = min(xs_top), max(xs_top)
+            lean = 0.25 * (xr - xl) * (1 if (xl + xr) / 2 > 0 else -1)
+            tips.append(Polygon([(xl, cut_y - 0.5), (xr, cut_y - 0.5),
+                                 ((xl + xr) / 2 + lean, cut_y + 0.55 * (xr - xl))]))
+        b = shapely.union_all([b, *tips]).buffer(0)
+        above = shapely.box(-W, H, W, 2 * H)
+        top = b.intersection(above).buffer(-EARS_ROUND).buffer(EARS_ROUND)
+        b = shapely.union_all([b.difference(above), top.intersection(above)]).buffer(0)
+        return b, p
     if photo == "okaeri":
         black, pink = trace_okaeri()
         ys, xs = np.nonzero(black | pink)
@@ -233,10 +305,23 @@ def rbox(x0, y0, x1, y1, r):
     return shapely.box(x0 + r, y0 + r, x1 - r, y1 - r).buffer(r, quad_segs=16)
 
 
-def make_body():
+def make_body(divider=True):
     outer = extrude(rbox(0, 0, W, D, CORNER), H)
     cavity = extrude(rbox(WALL, FRONT, W - WALL, D - WALL, 1.5), H, FLOOR)
-    return outer.difference(cavity)
+    body = outer.difference(cavity)
+    if divider:   # 真ん中で左右に仕切る（前後の壁につなぐ）
+        wall = shapely.box(W / 2 - DIV / 2, FRONT - 0.5, W / 2 + DIV / 2, D - WALL + 0.5)
+        body = body.union(extrude(wall, DIV_TOP - FLOOR + 0.5, FLOOR - 0.5))
+    return body
+
+
+def ear_plate(black):
+    """縁より上に飛び出す耳の板（正面の壁を耳の形のまま上に伸ばす）。"""
+    above = black.intersection(shapely.box(-W, H - 0.01, W, 2 * H))
+    if above.is_empty:
+        return None
+    plate = above.buffer(1.0).intersection(shapely.box(-W / 2 + CORNER, H - 1.0, W / 2 - CORNER, 2 * H))
+    return on_front(plate, EARS_PLATE)
 
 
 def on_front(g, depth, extra=0.0):
@@ -259,8 +344,12 @@ def face_down(m):
 def main(photo="tongue"):
     black, pink = placed_art(photo)
     name = {"tongue": "bailey_penholder", "puppy": "bailey_penholder_puppy",
-            "okaeri": "bailey_penholder_okaeri"}[photo]
-    body = make_body().difference(on_front(shapely.union_all([black, pink]), INLAY, 0.05))
+            "okaeri": "bailey_penholder_okaeri", "ears": "bailey_penholder_ears"}[photo]
+    body = make_body()
+    plate = ear_plate(black)
+    if plate is not None:
+        body = body.union(plate)
+    body = body.difference(on_front(shapely.union_all([black, pink]), INLAY, 0.05))
     black_m = on_front(black, INLAY)
     parts = [("body_white", body, 1), ("face_black", black_m, 2)]
     pink_m = None
@@ -290,5 +379,5 @@ def main(photo="tongue"):
 
 
 if __name__ == "__main__":
-    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri"]):
+    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri", "ears"]):
         main(photo)

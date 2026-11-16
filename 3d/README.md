@@ -6,6 +6,8 @@
 |---|---|---|---|
 | `bailey_keychain.3mf` | 顔のキーホルダー（黒/白/ピンク/赤） | 32×47×3.8 mm | 0.12〜0.16 mm, AMS lite |
 | `bailey_tag.3mf` | 骨型の名札（表 BAILEY / 裏 電話番号を彫刻） | 58×26×3.8 mm | 0.12 mm, AMS lite |
+| `bailey_penholder_ears_facedown.3mf` | **耳が箱から飛び出すベイリーのペン立て【倒した向き】**。耳まで写った写真（photos/bailey_ears.jpg）から写し取り、耳は縁から約37mm上に飛び出す（写真で切れた耳先は外向きに補って丸める）。真ん中の仕切りで左右2部屋。色替え約8回、中にツリーサポート | 90×138×75 mm（倒した状態） | 0.2 mm, サポート: ツリー(自動), ビルドプレートのみオフ |
+| `bailey_penholder_ears.3mf` | 同じペン立ての立てた向き（色替え約620回） | 90×75×137 mm | 立てたまま |
 | `bailey_penholder_okaeri_facedown.3mf` | **「おかえり」のベイリーのペン立て【倒した向き】**。帰宅時に飛びついてくる写真（photos/bailey_okaeri.jpg）から黒い毛・目・鼻・口と舌のピンクを写し取り、紺のズボン・床は除外。色替え約8回。中にツリーサポート | 90×100×75 mm（倒した状態） | 0.2 mm, サポート: ツリー(自動), ビルドプレートのみオフ |
 | `bailey_penholder_okaeri.3mf` | 同じペン立ての立てた向き（色替え約530回） | 90×75×100 mm | 立てたまま |
 | `bailey_penholder_puppy_facedown.3mf` | **子犬のころのベイリーのペン立て【倒した向き】**。写真（photos/bailey_puppy.jpg）から黒い毛・目・鼻を写し取り、背景・リードは除外。白・黒の2色で色替え約4回。中にツリーサポート | 90×100×75 mm（倒した状態） | 0.2 mm, サポート: ツリー(自動), ビルドプレートのみオフ |
@@ -37,3 +39,6 @@ python3 3d/make_bailey.py   # out/ に再生成
 python3 3d/preview.py       # out/preview.png を描く
 ```
 サイズや厚みは `make_bailey.py` 内の数値で調整できます。
+
+
+ベイリーの写真入りペン立て（`bailey_penholder*`）は、どれも真ん中の仕切りで左右2部屋（仕切りは縁より10mm低い）。
