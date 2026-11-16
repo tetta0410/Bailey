@@ -4,11 +4,13 @@
 そのまま写し取り、白い本体の正面に面一ではめ込む。白い毛は本体の白がそのまま見える。
 中の仕切りはなし。
 
-立てて印刷するので、絵のある高さでは毎層色替えになる。色は 白(本体)・黒・ピンク の3色で、
-ピンクは舌の高さだけ。
+色は 白(本体)・黒・ピンク の3色。印刷の向きを2通り用意する。
 
 出力 (3d/out/):
-  bailey_penholder.3mf  … body_white / face_black / tongue_pink の3パーツ（1つのオブジェクト）
+  bailey_penholder_facedown.3mf … 【おすすめ】顔を下にして倒した向き。絵は最初の 0.8mm だけなので
+                                  色替えは十数回。背面が天井になるので、中にサポートが必要。
+  bailey_penholder.3mf          … 立てた向き。サポート不要だが、絵のある高さで毎層色替え（約500回）。
+どちらも body_white / face_black / tongue_pink の3パーツ（1つのオブジェクト）。
 """
 import os
 import sys
@@ -133,13 +135,23 @@ def on_front(g, depth, extra=0.0):
     return m
 
 
+def face_down(m):
+    """正面 (y=0) が下になるよう X 軸まわりに 90° 回す（鏡像にはならない）。"""
+    m = m.copy()
+    v = m.vertices.copy()
+    m.vertices = np.column_stack([v[:, 0], -v[:, 2], v[:, 1]])
+    return m
+
+
 def main():
     black, pink = placed_art()
     body = make_body().difference(on_front(shapely.union_all([black, pink]), INLAY, 0.05))
     black_m, pink_m = on_front(black, INLAY), on_front(pink, INLAY)
     os.makedirs(OUT, exist_ok=True)
-    write_3mf(os.path.join(OUT, "bailey_penholder.3mf"), [("bailey_penholder", (90, 90), [
-        ("body_white", body, 1), ("face_black", black_m, 2), ("tongue_pink", pink_m, 3)])])
+    parts = [("body_white", body, 1), ("face_black", black_m, 2), ("tongue_pink", pink_m, 3)]
+    write_3mf(os.path.join(OUT, "bailey_penholder.3mf"), [("bailey_penholder", (90, 90), parts)])
+    write_3mf(os.path.join(OUT, "bailey_penholder_facedown.3mf"), [(
+        "bailey_penholder_facedown", (90, 90), [(n, face_down(m), e) for n, m, e in parts])])
     for name, m in [("body", body), ("black", black_m), ("pink", pink_m)]:
         print(f"{name:6s} {m.extents.round(1)} mm watertight={m.is_watertight} vol={m.volume/1000:.2f}cm3")
     zb, zp = black_m.bounds[:, 2], pink_m.bounds[:, 2]
@@ -148,7 +160,11 @@ def main():
           f"black z {zb[0]:.1f}-{zb[1]:.1f}, tongue z {zp[0]:.1f}-{zp[1]:.1f}")
     for lh in (0.2, 0.24):
         n2, n3 = (zb[1] - zb[0]) / lh, (zp[1] - zp[0]) / lh
-        print(f"layer {lh}: ~{n2:.0f} layers with black, ~{n3:.0f} with pink -> about {n2 + n3:.0f} swaps")
+        print(f"standing, layer {lh}: ~{n2:.0f} layers with black, ~{n3:.0f} with pink -> about {n2 + n3:.0f} swaps")
+    fd = face_down(body)
+    print(f"face-down: footprint {fd.extents[0]:.0f} x {fd.extents[1]:.0f} mm, height {fd.extents[2]:.0f} mm, "
+          f"art in the first {INLAY} mm = {INLAY / 0.2:.0f} layers at 0.2 mm -> about {2 * INLAY / 0.2:.0f} swaps; "
+          f"inner ceiling span {W - 2 * WALL:.1f} x {H - FLOOR:.1f} mm needs support")
     return body, black_m, pink_m
 
 
