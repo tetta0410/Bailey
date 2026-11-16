@@ -8,15 +8,16 @@
   puppy  … photos/bailey_puppy.jpg（子犬のころ。白・黒の2色。背景・リードは除く）
   okaeri … photos/bailey_okaeri.jpg（帰宅したときに飛びついてくる「おかえり」。白・黒・ピンク。ズボンは除く）
   ears   … photos/bailey_ears.jpg（耳まで写った正面。白・黒・ピンク。耳は箱の縁から上に飛び出す）
+  ears_in … 同じ写真で、耳まで箱の正面に収めた版（飛び出さない）
 
 中は真ん中の仕切りで左右2部屋。仕切りは縁より 10mm 低い。
 
-印刷の向きを2通り用意する（<name> は bailey_penholder / _puppy / _okaeri / _ears）:
+印刷の向きを2通り用意する（<name> は bailey_penholder / _puppy / _okaeri / _ears / _ears_in）:
   <name>_facedown.3mf … 【おすすめ】顔を下にして倒した向き。絵は最初の 0.8mm だけなので
                          色替えは数回。背面が天井になるので、中にサポートが必要。
   <name>.3mf          … 立てた向き。サポート不要だが、絵のある高さで毎層色替え。
 
-使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri|ears]   （省略時はすべて）
+使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri|ears|ears_in]   （省略時はすべて）
 """
 import os
 import sys
@@ -86,6 +87,7 @@ EARS_RIM_Y = 330           # 写真のこの行を箱の縁 (H) にそろえる�
 EARS_PLATE = 4.0           # 飛び出す耳の板の厚み
 EARS_ROUND = 2.5           # 写真の上端で切れた耳の先を丸める半径 (mm)
 EARS_EYES = [(420, 490, 85), (790, 465, 85)]   # (中心x, 中心y, 光や縁を白にするしきい値)
+EARS_IN_FIT = (80.0, 92.0)  # 飛び出さない版で、耳まで含めた絵が収まる幅・高さ (mm)
 
 
 def trace_ears():
@@ -258,6 +260,14 @@ def placed_art(photo="tongue"):
         b, p = mask_to_shape(black, mm), mask_to_shape(pink, mm)
         t = lambda g: affinity.translate(g, -ART_W / 2, H)
         return t(b), t(p)
+    if photo == "ears_in":
+        # 飛び出す版と同じ絵（耳先を補って丸めたもの）を、耳まで正面に収まるよう縮めて中央に置く
+        b, p = placed_art("ears")
+        x0, y0, x1, y1 = shapely.union_all([b, p]).bounds
+        k = min(EARS_IN_FIT[0] / (x1 - x0), EARS_IN_FIT[1] / (y1 - y0))
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        f = lambda g: affinity.translate(affinity.scale(g, k, k, origin=(cx, cy)), -cx, H / 2 - cy)
+        return f(b), f(p)
     if photo == "ears":
         black, pink = trace_ears()
         ys, xs = np.nonzero(black | pink)
@@ -344,7 +354,8 @@ def face_down(m):
 def main(photo="tongue"):
     black, pink = placed_art(photo)
     name = {"tongue": "bailey_penholder", "puppy": "bailey_penholder_puppy",
-            "okaeri": "bailey_penholder_okaeri", "ears": "bailey_penholder_ears"}[photo]
+            "okaeri": "bailey_penholder_okaeri", "ears": "bailey_penholder_ears",
+            "ears_in": "bailey_penholder_ears_in"}[photo]
     body = make_body()
     plate = ear_plate(black)
     if plate is not None:
@@ -379,5 +390,5 @@ def main(photo="tongue"):
 
 
 if __name__ == "__main__":
-    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri", "ears"]):
+    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri", "ears", "ears_in"]):
         main(photo)
