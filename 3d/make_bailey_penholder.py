@@ -9,15 +9,16 @@
   okaeri … photos/bailey_okaeri.jpg（帰宅したときに飛びついてくる「おかえり」。白・黒・ピンク。ズボンは除く）
   ears   … photos/bailey_ears.jpg（耳まで写った正面。白・黒・ピンク。耳は箱の縁から上に飛び出す）
   ears_in … 同じ写真で、耳まで箱の正面に収めた版（飛び出さない）
+  puppy_green … 子犬の写真を深緑の本体で。白い毛は白ではめ込み、犬のまわりに白いフチ（緑・白・黒の3色）
 
 中は真ん中の仕切りで左右2部屋。仕切りは縁より 10mm 低い。
 
-印刷の向きを2通り用意する（<name> は bailey_penholder / _puppy / _okaeri / _ears / _ears_in）:
+印刷の向きを2通り用意する（<name> は bailey_penholder / _puppy / _okaeri / _ears / _ears_in / _puppy_green）:
   <name>_facedown.3mf … 【おすすめ】顔を下にして倒した向き。絵は最初の 0.8mm だけなので
                          色替えは数回。背面が天井になるので、中にサポートが必要。
   <name>.3mf          … 立てた向き。サポート不要だが、絵のある高さで毎層色替え。
 
-使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri|ears|ears_in]   （省略時はすべて）
+使い方: python3 3d/make_bailey_penholder.py [tongue|puppy|okaeri|ears|ears_in|puppy_green]   （省略時はすべて）
 """
 import os
 import sys
@@ -67,6 +68,11 @@ PUPPY_OUTLINE = [(60, 330), (150, 170), (320, 120), (560, 190), (800, 200), (950
                  (750, 1270), (450, 1270), (330, 1120), (230, 960), (160, 760), (150, 560), (80, 420)]
 PUPPY_LEASH = [(1040, 727), (1107, 715), (1300, 768), (1300, 852), (1133, 812), (1053, 800)]
 PUPPY_BOTTOM = 1260        # これより下（足）は使わない
+# 色付きの本体にするときの、白い毛の顔の輪郭（おでこ〜ほお〜あご。耳と横の黒い毛は写真から足す）
+PUPPY_FACE = [(440, 250), (560, 235), (700, 245), (830, 255), (900, 300), (1000, 500), (1060, 700),
+              (1050, 900), (990, 1060), (900, 1170), (780, 1220), (650, 1230), (520, 1200), (420, 1120),
+              (340, 980), (280, 800), (250, 600), (300, 400), (380, 300)]
+FUR_BORDER = 1.2           # 色付きの本体のとき、犬のまわりに付ける白いフチ (mm)
 
 
 # ---- 絵（おかえりの写真）。写真の右端で顔が切れているので、絵の右端を正面の右端にそろえる
@@ -304,11 +310,23 @@ def placed_art(photo="tongue"):
         return t(mask_to_shape(black, mm)), t(mask_to_shape(pink, mm))
     black, _ = trace_puppy()
     ys, xs = np.nonzero(black)
-    black = black[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    y0, x0 = ys.min(), xs.min()
+    black = black[y0:ys.max() + 1, x0:xs.max() + 1]
     hpx, wpx = black.shape
     mm = min(PUPPY_FIT[0] / wpx, PUPPY_FIT[1] / hpx)
-    b = mask_to_shape(black, mm)          # 左上が原点, 下向きが -y
-    return affinity.translate(b, -wpx * mm / 2, H / 2 + hpx * mm / 2), shapely.Polygon()
+    t = lambda g: affinity.translate(g, -wpx * mm / 2, H / 2 + hpx * mm / 2)
+    b = t(mask_to_shape(black, mm))       # 左上が原点, 下向きが -y
+    if photo == "puppy_green":
+        # 白い毛を含めた犬の形 = 顔の輪郭 ∪ 黒い毛。まわりに白いフチを付ける
+        face = t(Polygon([((x - x0) * mm, -(y - y0) * mm) for x, y in PUPPY_FACE]))
+        # 黒い毛は少し太らせてから戻し、近くの小さなかけらも犬の形にまとめる
+        sil = shapely.union_all([face.buffer(1.5).buffer(-1.5), b.buffer(2.5).buffer(-1.5)])
+        sil = shapely.Polygon(max(getattr(sil, "geoms", [sil]), key=lambda g: g.area).exterior)
+        sil = sil.buffer(FUR_BORDER, join_style="round").buffer(-0.6).buffer(0.6)
+        flat = shapely.box(-W / 2 + CORNER + 0.5, 0.5, W / 2 - CORNER - 0.5, H - 0.5)
+        white = sil.intersection(flat).difference(b.buffer(0.01)).buffer(0)
+        return b, shapely.Polygon(), white
+    return b, shapely.Polygon()
 
 
 def rbox(x0, y0, x1, y1, r):
@@ -352,21 +370,29 @@ def face_down(m):
 
 
 def main(photo="tongue"):
-    black, pink = placed_art(photo)
+    art = placed_art(photo)
+    black, pink = art[0], art[1]
+    white = art[2] if len(art) > 2 else None   # 色付きの本体のときだけ、白い毛もはめ込む
     name = {"tongue": "bailey_penholder", "puppy": "bailey_penholder_puppy",
             "okaeri": "bailey_penholder_okaeri", "ears": "bailey_penholder_ears",
-            "ears_in": "bailey_penholder_ears_in"}[photo]
+            "ears_in": "bailey_penholder_ears_in", "puppy_green": "bailey_penholder_puppy_green"}[photo]
     body = make_body()
     plate = ear_plate(black)
     if plate is not None:
         body = body.union(plate)
-    body = body.difference(on_front(shapely.union_all([black, pink]), INLAY, 0.05))
+    inlays = [black, pink] + ([white] if white is not None else [])
+    body = body.difference(on_front(shapely.union_all(inlays), INLAY, 0.05))
     black_m = on_front(black, INLAY)
-    parts = [("body_white", body, 1), ("face_black", black_m, 2)]
+    if white is None:
+        parts = [("body_white", body, 1), ("face_black", black_m, 2)]
+    else:
+        parts = [("body_green", body, 1), ("fur_white", on_front(white, INLAY), 2), ("face_black", black_m, 3)]
     pink_m = None
     if not pink.is_empty:
         pink_m = on_front(pink, INLAY)
-        parts.append(("tongue_pink", pink_m, 3))
+        parts.append(("tongue_pink", pink_m, len(parts) + 1))
+    global LAST_PARTS
+    LAST_PARTS = parts                    # プレビュー用（パーツ名で色分けする）
     os.makedirs(OUT, exist_ok=True)
     write_3mf(os.path.join(OUT, f"{name}.3mf"), [(name, (90, 90), parts)])
     write_3mf(os.path.join(OUT, f"{name}_facedown.3mf"), [(
@@ -390,5 +416,5 @@ def main(photo="tongue"):
 
 
 if __name__ == "__main__":
-    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri", "ears", "ears_in"]):
+    for photo in (sys.argv[1:] or ["tongue", "puppy", "okaeri", "ears", "ears_in", "puppy_green"]):
         main(photo)
