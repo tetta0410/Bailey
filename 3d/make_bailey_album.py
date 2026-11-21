@@ -28,11 +28,12 @@ from make_pencase import write_3mf  # noqa: E402
 W, D, H, CORNER = mb.W, mb.D, mb.H, mb.CORNER
 ENGRAVE = 0.6                 # 左右・背面の彫りの深さ
 
-# 面ごとの写真（mb.placed_art の名前）
-FRONT = "okaeri"
-LEFT = "puppy"
-RIGHT = "ears_in"
-BACK = "tongue"
+# 面ごとの写真（mb.placed_art の名前）。2回目にもらった4枚:
+#   tongue2 = 舌ぺろ（耳まで）, puppy2 = 子犬（切り抜き）, dandelion = たんぽぽの横顔, nose = 鼻アップ
+FRONT = "tongue2"
+LEFT = "puppy2"
+RIGHT = "dandelion"
+BACK = "nose"
 
 SIDE_FIT = (D - 2 * CORNER - 6, 90.0)    # 左右の面に収める幅・高さ
 BACK_FIT = (W - 2 * CORNER - 6, 90.0)    # 背面に収める幅・高さ

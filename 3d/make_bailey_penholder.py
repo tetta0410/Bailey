@@ -254,6 +254,88 @@ def trace_puppy():
     return black, None
 
 
+# ---- 2回目にもらった4枚（アルバム用）。写真ごとの設定で同じ処理を使う
+#   black: ("abs", しきい値) か ("ratio", まわりの白い毛の明るさに対する比)
+#   outline: 犬のまわり（写真の画素座標）。None なら写真全体
+#   top_max / x_max: 頭につながる黒だけ残す（かたまりの上端・左端がこれより小さいもの）
+#   eyes: (中心x, 中心y, 半径, 光や縁を白にするしきい値)
+PHOTO_SETS = {
+    "nose": dict(path="bailey_nose.jpg", black=("abs", 60), pink=False,
+                 outline=[(330, 340), (390, 310), (470, 350), (560, 420), (630, 420), (710, 400), (800, 300),
+                          (870, 240), (1030, 150), (1108, 150), (1108, 1477), (390, 1477), (330, 1300),
+                          (250, 1150), (170, 1000), (220, 920), (270, 840), (275, 700), (270, 560), (290, 470)],
+                 eyes=[(842, 560, 55, 35)]),
+    "puppy2": dict(path="bailey_puppy_cutout.png", black=("ratio", 0.62), pink=False, outline=None,
+                   eyes=[(365, 437, 40, 120), (678, 476, 42, 120)]),
+    "tongue2": dict(path="bailey_tongue2.jpg", black=("abs", 70), pink=True, outline=None,
+                    top_max=1150, x_max=1250, eyes=[(478, 497, 55, 85), (857, 462, 60, 50)]),
+    "dandelion": dict(path="bailey_dandelion.jpg", black=("abs", 70), pink=True,
+                      outline=[(640, 280), (690, 210), (800, 320), (940, 190), (1040, 90), (1120, 200),
+                               (1200, 400), (1260, 560), (1290, 800), (1280, 1040), (1240, 1280), (1200, 1440),
+                               (660, 1440), (480, 1400), (480, 1240), (300, 1120), (230, 1000), (300, 940),
+                               (440, 840), (520, 760), (580, 600), (640, 460)],
+                      eyes=[]),
+}
+WORK_W = 1512       # どの写真もこの幅にそろえてから処理する（1画素 ≒ 0.05〜0.07mm）
+
+
+def trace_set(key):
+    """PHOTO_SETS の写真 → (黒, ピンク) の2値画像。"""
+    from PIL import ImageDraw
+    cfg = PHOTO_SETS[key]
+    im = ImageOps.exif_transpose(Image.open(os.path.join(HERE, "photos", cfg["path"]))).convert("RGB")
+    k = WORK_W / im.width
+    if abs(k - 1) > 1e-3:
+        im = im.resize((WORK_W, round(im.height * k)), Image.LANCZOS)
+    rgb = np.asarray(im).astype(float)
+    r, g, b = (ndi.gaussian_filter(rgb[..., i], 2) for i in range(3))
+    gray = ndi.gaussian_filter(rgb.mean(axis=2), 1.3)
+    hsv = np.asarray(im.convert("HSV")).astype(float)
+    hue, sat, val = (ndi.gaussian_filter(hsv[..., i], 1.5) for i in range(3))
+
+    dog = np.ones(gray.shape, bool)
+    if cfg.get("outline"):
+        m = Image.new("L", im.size, 0)
+        ImageDraw.Draw(m).polygon([(x * k, y * k) for x, y in cfg["outline"]], fill=255)
+        dog = np.asarray(m) > 0
+    # 芝生・首輪・花など色の強いもの（暗い所は色が不安定なので、ある程度明るい所だけで判定する）
+    colored = (((g > r + 12) & (g > b + 5)) & (val > 60)) | ((sat > 110) & (val > 110))
+    pink = np.zeros(gray.shape, bool)
+    if cfg["pink"]:
+        pink = ((hue > 225) | (hue < 12)) & (sat > 60) & (val > 100) & dog
+        pink = morphology.remove_small_objects(pink, max_size=2000)
+        pink = ndi.binary_fill_holes(morphology.closing(pink, morphology.disk(6)))
+    mode, t = cfg["black"]
+    if mode == "abs":
+        black = gray < t
+    else:
+        small = gray[::8, ::8]
+        loc = ndi.gaussian_filter(ndi.percentile_filter(small, 95, size=25), 3)
+        loc = ndi.zoom(loc, (gray.shape[0] / loc.shape[0], gray.shape[1] / loc.shape[1]), order=1)
+        black = gray < t * loc[:gray.shape[0], :gray.shape[1]]
+    black &= dog & ~colored & ~morphology.dilation(pink, morphology.disk(2))
+    if "top_max" in cfg:
+        lab, n = ndi.label(black)
+        keep = np.zeros(n + 1, bool)
+        for i, sl in enumerate(ndi.find_objects(lab), 1):
+            if sl[0].start < cfg["top_max"] * k and sl[1].start < cfg["x_max"] * k:
+                keep[i] = True
+        black = keep[lab]
+    yy, xx = np.mgrid[0:gray.shape[0], 0:gray.shape[1]]
+    for cx, cy, rad, thr in cfg["eyes"]:
+        eye = (xx - cx * k) ** 2 + (yy - cy * k) ** 2 < (rad * k) ** 2
+        light = morphology.remove_small_objects(eye & (gray > thr), max_size=15)
+        black &= ~morphology.dilation(light, morphology.disk(2))
+    black = morphology.closing(black, morphology.disk(3))
+    black = morphology.opening(black, morphology.disk(4))
+    black = morphology.remove_small_objects(black, max_size=300)
+    black = morphology.remove_small_holes(black, max_size=80)
+    return black, pink
+
+
+SET_FIT = (80.0, 90.0)
+
+
 def placed_art(photo="tongue"):
     """絵を正面に配置（u=横・中央が 0, v=高さ）。
 
@@ -266,6 +348,15 @@ def placed_art(photo="tongue"):
         b, p = mask_to_shape(black, mm), mask_to_shape(pink, mm)
         t = lambda g: affinity.translate(g, -ART_W / 2, H)
         return t(b), t(p)
+    if photo in PHOTO_SETS:
+        black, pink = trace_set(photo)
+        ys, xs = np.nonzero(black | pink)
+        y0, x0 = ys.min(), xs.min()
+        black, pink = black[y0:ys.max() + 1, x0:xs.max() + 1], pink[y0:ys.max() + 1, x0:xs.max() + 1]
+        hpx, wpx = black.shape
+        mm = min(SET_FIT[0] / wpx, SET_FIT[1] / hpx)
+        t = lambda g: affinity.translate(g, -wpx * mm / 2, H / 2 + hpx * mm / 2)
+        return t(mask_to_shape(black, mm)), (t(mask_to_shape(pink, mm)) if pink.any() else shapely.Polygon())
     if photo == "ears_in":
         # 飛び出す版と同じ絵（耳先を補って丸めたもの）を、耳まで正面に収まるよう縮めて中央に置く
         b, p = placed_art("ears")
