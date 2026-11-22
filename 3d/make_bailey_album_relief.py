@@ -45,6 +45,8 @@ LAYER = 0.08             # 積層ピッチ（細かいほど灰色の段階が�
 ZB = T - W_MAX           # 黒→白に替わる高さ
 FRAME = 2.5              # 板のまわりの黒い縁 (mm)
 GRID = 0.15              # 厚みマップの細かさ (mm)
+BLEED_LEFT = {"sleep"}    # 左の縁から首が出ているように、左に寄せて縁に付ける絵
+RIGHT_ROOM = 1.5         # そのときの右側の余白 (mm)
 KEEP = 0.35              # メッシュの面数をどこまで減らすか（残す割合）
 
 
@@ -54,16 +56,19 @@ def face_size(face):
 
 
 def brightness(face):
-    """板の絵の部分（縁の内側）の明るさマップ 0..1（行0が上）。イラストを縦横比のまま中央に置き、余白は白。"""
+    """板の絵の部分（縁の内側）の明るさマップ 0..1（行0が上）。イラストを縦横比のまま中央に置き、余白は白。
+    BLEED_LEFT の絵は左に寄せ、黒い縁から間をあけずに出ているようにする。"""
     w, h = face_size(face)
     aw, ah = w - 2 * FRAME, h - 2 * FRAME
     nx, ny = round(aw / GRID), round(ah / GRID)
     g = bi.load(ILLUSTS[face]).astype(np.float32)
-    k = min(nx / g.shape[1], ny / g.shape[0])
+    bleed = ILLUSTS[face] in BLEED_LEFT
+    room = nx - round(RIGHT_ROOM / GRID) if bleed else nx
+    k = min(room / g.shape[1], ny / g.shape[0])
     gw, gh = round(g.shape[1] * k), round(g.shape[0] * k)
     g = cv2.resize(g, (gw, gh), interpolation=cv2.INTER_AREA)
     canvas = np.ones((ny, nx), np.float32)
-    y0, x0 = (ny - gh) // 2, (nx - gw) // 2
+    y0, x0 = (ny - gh) // 2, (0 if bleed else (nx - gw) // 2)     # 左に寄せる絵は、黒い縁にぴったり付ける
     canvas[y0:y0 + gh, x0:x0 + gw] = g
     return canvas
 

@@ -30,11 +30,17 @@ FILES = {
 }
 
 
+# 左端を切り落とす量（元の画像の画素）。寝顔は首の毛が左へ向かって透けて消えていくので、
+# 毛が詰まっている所で切り、板の左の縁からそのまま首が出ているように見せる
+LEFT_CROP = {"sleep": 200}
+
+
 @functools.lru_cache()
 def load(key):
     """イラスト → 明るさ 0..1（透明な背景は白）。絵のある範囲で切り抜く。"""
     im = Image.open(os.path.join(ILLUST, FILES[key]))
     a = np.asarray(im.convert("RGBA")).astype(float) / 255
+    a = a[:, LEFT_CROP.get(key, 0):]
     g = a[..., :3].mean(2) * a[..., 3] + (1 - a[..., 3])
     ys, xs = np.nonzero(g < 0.9)
     return g[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
