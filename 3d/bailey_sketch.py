@@ -31,6 +31,9 @@ SIT_OUTLINE = [(x * 2, y * 2) for x, y in [
     (100, 45), (160, 55), (250, 150), (330, 170), (410, 130), (470, 40), (520, 0), (540, 80), (560, 200),
     (580, 300), (560, 360), (540, 430), (520, 520), (520, 620), (500, 660), (430, 700), (410, 720), (300, 730),
     (250, 720), (220, 640), (200, 580), (180, 520), (170, 440), (150, 350), (120, 250), (100, 150)]]
+SLEEP2_OUTLINE = [(0, 230), (470, 215), (580, 60), (610, 0), (840, 0), (920, 200), (1000, 300), (1150, 350),
+                  (1280, 450), (1320, 620), (1430, 780), (1570, 840), (1580, 980), (1450, 1060), (1250, 1080),
+                  (1050, 1020), (870, 950), (780, 1100), (600, 1180), (300, 1200), (0, 1250)]
 PAW2_OUTLINE = [(x * 2, y * 2) for x, y in [
     (110, 300), (140, 230), (220, 180), (320, 160), (440, 150), (540, 160), (610, 190), (600, 260), (590, 330),
     (600, 420), (570, 480), (520, 520), (440, 520), (360, 500), (270, 470), (200, 440), (150, 400), (120, 350)]]
@@ -42,12 +45,16 @@ EYEBALLS = {
     "sit": [(596, 624, 46), (926, 580, 40)],
     "nose": [(842, 560, 48)],
 }
-EYE_BRIGHT = {"tongue2": 0.40, "sit": 0.42, "nose": 0.40}   # 目のまわりで白にする明るさ（犬の中で正規化した 0..1）
+# 閉じた目: 黒い毛の中のまぶたの線・目の切れ込みを、写真の明暗の線のまま白い線で入れる
+CLOSED_EYES = {"sleep2"}
+NO_PINK = {"sleep2"}      # 口元のうっすらしたピンクは肌の色なので、舌のように縁取らない
+EYE_BRIGHT = {"sleep2": 0.99, "tongue2": 0.40, "sit": 0.42, "nose": 0.40}   # 目のまわりで白にする明るさ（犬の中で正規化した 0..1）
 # 目のまわり（元の写真の画素: 中心x, 中心y, 半径）。ここだけ黒い毛の中の細部を白で抜く
 EYE_ZONES = {
     "tongue2": [(478, 514, 75), (857, 475, 72)],
     "nose": [(840, 560, 75)],
     "sit": [(596, 624, 58), (926, 580, 52)],
+    "sleep2": [(1110, 495, 95)],
 }
 PAW_OUTLINE = [(330, 640), (460, 480), (660, 430), (920, 420), (1120, 460), (1280, 540), (1400, 660),
                (1560, 780), (1680, 860), (1720, 960), (1680, 1080), (1580, 1160), (1440, 1240), (1280, 1300),
@@ -107,6 +114,11 @@ def prepare(key):
     elif key == "sit":
         a = _load("bailey_sit.jpg")[:1480]                     # 足先まで
         m = _grabcut(a, SIT_OUTLINE) & _poly(a.shape, SIT_OUTLINE)
+    elif key == "sleep2":
+        a = _load("bailey_sleep2.jpg")
+        m = _grabcut(a, SLEEP2_OUTLINE) & _poly(a.shape, SLEEP2_OUTLINE)
+        nol = np.zeros(m.shape, bool)
+        nol[1080:, :800] = True                                # 体の下側は写真の途中で切るので輪郭線を引かない
     elif key == "paw":
         a = _load("bailey_paw.jpg")
         m = _grabcut(a, PAW_OUTLINE)
@@ -155,7 +167,7 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     lines = (ndi.gaussian_filter(g, s) - ndi.gaussian_filter(g, 1.6 * s)) < -edge   # 明暗の境目の暗い側
     fill = ndi.gaussian_filter(g, 1.0) < DARK.get(key, dark)                       # 暗い毛
     red = ndi.gaussian_filter(f[..., 0] - (f[..., 1] + f[..., 2]) / 2, 2)
-    pinkish = red > 55                                                             # 舌など
+    pinkish = (red > 55) & (key not in NO_PINK)                                    # 舌など
     fill &= ~pinkish
     if paw:
         pinkish = ndi.gaussian_filter(f[..., 0], 4) / (ndi.gaussian_filter(f[..., 1], 4) + 1) > (1.48 if key == "paw" else 1.3)
@@ -191,6 +203,12 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     bright = morphology.remove_small_objects(bright, max_size=int((0.25 / PX_MM) ** 2))
     # 印刷で潰れない大きさ（0.4mm 程度）に少しだけ広げる
     black &= ~ndi.binary_dilation(bright, structure=morphology.disk(int(0.1 / PX_MM)))
+    if key in CLOSED_EYES:
+        loc = np.clip(g * 3, 0, 1)                                      # 暗い所を見やすく（写真の明暗の順番は変えない）
+        loc = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(4, 4)).apply((loc * 255).astype(np.uint8)) / 255.0
+        cs = 0.15 / PX_MM
+        crease = ((ndi.gaussian_filter(loc, cs) - ndi.gaussian_filter(loc, 1.6 * cs)) < -0.03) & eye & fill
+        black &= ~morphology.remove_small_objects(crease, max_size=200)
     # 目玉の中: まわりの黒い毛より明るく写っている瞳の茶色い部分も白にする（真ん中の黒い瞳はそのまま黒）
     if key in IRIS:
         gi = ndi.gaussian_filter(g, 0.1 / PX_MM)

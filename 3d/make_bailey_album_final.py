@@ -1,6 +1,6 @@
 """ベイリーの4面アルバム・ペン立て（完成版）— 黒い箱 × 白い板 × 黒いベイリー。
 
-写真: 正面=舌ぺろ, 左=おすわり, 右=肉球, 背面=鼻アップ。
+写真: 正面=舌ぺろ, 左=寝顔, 右=肉球, 背面=鼻アップ。
 まわりに細い額縁の線を入れる。
 絵は描き足しをせず、bailey_sketch.py で写真そのものを白黒の線画に写し取る
 （目・毛並み・ヒゲ・舌・肉球・ホクロまで写真のまま）。
@@ -35,7 +35,7 @@ from make_bailey import extrude, text_poly  # noqa: E402
 from make_pencase import write_3mf  # noqa: E402
 
 OUT = mb.OUT
-PHOTOS = {"front": "tongue2", "left": "sit", "right": "paw2", "back": "nose"}
+PHOTOS = {"front": "tongue2", "left": "sleep2", "right": "paw2", "back": "nose"}
 
 FRAME_INSET = 2.5       # 額縁の線の、板の縁からの距離
 FRAME_W = 0.9           # 額縁の線の太さ
