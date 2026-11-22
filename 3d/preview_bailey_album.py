@@ -18,11 +18,12 @@ _spec.loader.exec_module(_mod)
 
 WHITE, BLACK, PINK, CARVED = (np.array(c) for c in ([0.97, 0.96, 0.93], [0.11, 0.11, 0.13],
                                                      [0.94, 0.53, 0.60], [0.74, 0.73, 0.70]))
-parts = ma.main()
+BW = sys.argv[1:] == ["bw"]          # 4面とも白黒（はめ込み）の版
+parts = ma.main_bw() if BW else ma.main()
 meshes, cols = [], []
 for name, m, _ in parts:
     c = np.tile({"body_white": WHITE, "face_black": BLACK, "tongue_pink": PINK}[name], (len(m.faces), 1))
-    if name == "body_white":
+    if name == "body_white" and not BW:
         ctr, n = m.triangles_center, m.face_normals
         lo, hi = ma.ENGRAVE - 0.2, ma.ENGRAVE + 0.2
         carved = (((ctr[:, 0] > lo) & (ctr[:, 0] < hi) & (n[:, 0] < -0.9)) |
@@ -38,4 +39,4 @@ sheet = Image.new("RGB", (sum(v.width for v in views), views[0].height))
 x = 0
 for v in views:
     sheet.paste(v, (x, 0)); x += v.width
-sheet.save(os.path.join(ma.mb.OUT, "preview_bailey_album.png"))
+sheet.save(os.path.join(ma.mb.OUT, "preview_bailey_album_bw.png" if BW else "preview_bailey_album.png"))
