@@ -35,6 +35,13 @@ PAW2_OUTLINE = [(x * 2, y * 2) for x, y in [
     (110, 300), (140, 230), (220, 180), (320, 160), (440, 150), (540, 160), (610, 190), (600, 260), (590, 330),
     (600, 420), (570, 480), (520, 520), (440, 520), (360, 500), (270, 470), (200, 440), (150, 400), (120, 350)]]
 DARK = {"sit": 0.40}    # 黒い毛が日に当たって灰色に写っている写真は、黒く塗る範囲を少し広げる
+IRIS = {"tongue2": 0.12, "sit": 0.11, "nose": 0.14}   # 目玉の中で白にする明るさ
+# 目玉（元の写真の画素: 中心x, 中心y, 半径）
+EYEBALLS = {
+    "tongue2": [(478, 514, 50), (857, 475, 47)],
+    "sit": [(596, 624, 46), (926, 580, 40)],
+    "nose": [(842, 560, 48)],
+}
 EYE_BRIGHT = {"tongue2": 0.40, "sit": 0.42, "nose": 0.40}   # 目のまわりで白にする明るさ（犬の中で正規化した 0..1）
 # 目のまわり（元の写真の画素: 中心x, 中心y, 半径）。ここだけ黒い毛の中の細部を白で抜く
 EYE_ZONES = {
@@ -113,9 +120,13 @@ def prepare(key):
     if nol is None:
         nol = np.zeros(m.shape, bool)
     eye = np.zeros(m.shape, bool)
+    ball = np.zeros(m.shape, bool)
     yy, xx = np.mgrid[0:m.shape[0], 0:m.shape[1]]
     for cx, cy, r in EYE_ZONES.get(key, []):
         eye |= (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
+    for cx, cy, r in EYEBALLS.get(key, []):
+        ball |= (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
+    eye = np.where(ball, 2, eye.astype(np.uint8))                          # 0=外, 1=目のまわり, 2=目玉
     if rot:
         a, m, nol, eye = (np.ascontiguousarray(np.rot90(v, rot)) for v in (a, m, nol, eye))
     ys, xs = np.nonzero(m)
@@ -132,7 +143,9 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     a = cv2.resize(a, size, interpolation=cv2.INTER_AREA)
     m = cv2.resize(m.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
     nol = cv2.resize(nol.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
-    eye = cv2.resize(eye.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+    eye = cv2.resize(eye.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST)
+    eyeball = eye == 2
+    eye = eye > 0
     f = a.astype(float)
     g = f.mean(2) / 255
     lo, hi = np.percentile(g[m], [2, 98])                      # 写真ごとの露出差をそろえる
@@ -178,6 +191,12 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     bright = morphology.remove_small_objects(bright, max_size=int((0.25 / PX_MM) ** 2))
     # 印刷で潰れない大きさ（0.4mm 程度）に少しだけ広げる
     black &= ~ndi.binary_dilation(bright, structure=morphology.disk(int(0.1 / PX_MM)))
+    # 目玉の中: まわりの黒い毛より明るく写っている瞳の茶色い部分も白にする（真ん中の黒い瞳はそのまま黒）
+    if key in IRIS:
+        gi = ndi.gaussian_filter(g, 0.1 / PX_MM)
+        iris = (gi > IRIS[key]) & fill & eyeball
+        iris = morphology.remove_small_objects(iris, max_size=int((0.3 / PX_MM) ** 2))
+        black &= ~iris
 
     # 印刷できない小さな黒い点を消し、小さすぎる白い穴は埋める
     black = morphology.remove_small_objects(black, max_size=int((0.6 / PX_MM) ** 2))
