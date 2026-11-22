@@ -1,9 +1,9 @@
 """ベイリーの4面アルバム・ペン立て（完成版）— 黒い箱 × 白い板 × 黒いベイリー。
 
 写真: 正面=舌ぺろ, 左=子犬, 右=肉球, 背面=鼻アップ。
-絵は輪郭を強めにならしてポスター風にし、まわりに細い額縁の線を入れる。舌は白を黒で縁取る。
-目は写真の位置・大きさに合わせて、白い縁＋黒目＋光の点で描き直す（黒い毛に埋もれないように）。
-肉球は写真から肉球の形とホクロを取り、太い線＋ホクロの点＋ふわふわの毛先でスケッチ風に描く。
+まわりに細い額縁の線を入れる。
+絵は描き足しをせず、bailey_sketch.py で写真そのものを白黒の線画に写し取る
+（目・毛並み・ヒゲ・舌・肉球・ホクロまで写真のまま）。
 箱の底には白で「Bailey / 2026.1.15」。
 
 2つの作り方:
@@ -17,18 +17,17 @@
 """
 import functools
 import os
-import random
 import sys
 
 import numpy as np
 import shapely
 import trimesh
 from shapely import affinity
-from shapely.geometry import Point, Polygon
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "ittetsu"))
+import bailey_sketch as bs  # noqa: E402
 import make_bailey_album as ma  # noqa: E402
 import make_bailey_album_plates as mp  # noqa: E402
 import make_bailey_penholder as mb  # noqa: E402
@@ -38,21 +37,9 @@ from make_pencase import write_3mf  # noqa: E402
 OUT = mb.OUT
 PHOTOS = {"front": "tongue2", "left": "puppy2", "right": "paw", "back": "nose"}
 
-# 目（作業画像=幅1512 の画素で 中心x, 中心y, 黒目の半径）
-EYES = {
-    "tongue2": [(478, 514, 48), (857, 475, 45)],
-    "puppy2": [(345, 423, 35), (641, 457, 47)],
-    "nose": [(1146, 764, 60)],
-}
-EYE_RING = 0.8          # 黒目のまわりの白い縁の太さ (mm)
-EYE_GLINT = 0.6         # 光の点の最小半径 (mm)
-
-mb.trace_set = functools.lru_cache()(mb.trace_set)    # 同じ写真を何度もなぞらない
-SMOOTH = 0.6            # 輪郭のならし（大きいほどすっきり太い形）
 FRAME_INSET = 2.5       # 額縁の線の、板の縁からの距離
 FRAME_W = 0.9           # 額縁の線の太さ
 ART_MARGIN = 4.0        # 額縁の内側の余白
-TONGUE_LINE = 1.1       # 舌の縁取り
 
 BOTTOM_TEXT = ["Bailey", "2026.1.15"]
 BOTTOM_SIZES = [11.0, 5.0]
@@ -66,133 +53,23 @@ def panel_size(face):
     return mp.PW[face] - 2 * mp.INSET, mp.PH - 1.0
 
 
-def placed_eyes(photo):
-    """EYES の画素座標を、mb.placed_art と同じ置き方の mm 座標 (x, y, r) にする。"""
-    black, pink = mb.trace_set(photo)
-    ys, xs = np.nonzero(black | pink)
-    y0, x0 = ys.min(), xs.min()
-    hpx, wpx = ys.max() + 1 - y0, xs.max() + 1 - x0
-    mm = min(mb.SET_FIT[0] / wpx, mb.SET_FIT[1] / hpx)
-    return [((x - x0) * mm - wpx * mm / 2, -(y - y0) * mm + mb.H / 2 + hpx * mm / 2, r * mm)
-            for x, y, r in EYES.get(photo, [])]
-
-
-def fit_to(geoms, points, fit):
-    """図形をまとめて fit に収まる大きさにして中央 (0, H/2) に置く。points (x, y, r) も同じように動かす。"""
-    x0, y0, x1, y1 = shapely.union_all([g for g in geoms if not g.is_empty]).bounds
-    k = min(fit[0] / (x1 - x0), fit[1] / (y1 - y0))
-    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    f = lambda g: affinity.translate(affinity.scale(g, k, k, origin=(cx, cy)), -cx, ma.H / 2 - cy)
-    return [f(g) for g in geoms], [((x - cx) * k, (y - cy) * k + ma.H / 2, r * k) for x, y, r in points]
-
-
-def draw_eyes(b, eyes):
-    """白い縁 → 黒目 → 光の点（左上）。"""
-    for x, y, r in eyes:
-        b = b.difference(Point(x, y).buffer(r + EYE_RING, quad_segs=24))
-        gr = max(0.28 * r, EYE_GLINT)
-        pupil = Point(x, y).buffer(r, quad_segs=24).difference(
-            Point(x - 0.35 * r, y + 0.35 * r).buffer(gr, quad_segs=16))
-        b = b.union(pupil)
-    return b.buffer(0)
-
-
-# ---------------------------------------------------------------- 肉球
-PAW_PHOTO = os.path.join(HERE, "photos", "bailey_paw.jpg")
-# 肉球ごとの探す範囲（写真の画素: 中心x, 中心y, 半径x, 半径y）。写真は指が右向きなので、あとで90°回して指を上にする
-PAW_PADS = [(1200, 630, 110, 130), (1440, 840, 150, 140), (1340, 1130, 140, 90), (1000, 1170, 130, 90),
-            (870, 840, 220, 270)]
-PAW_OUTLINE = [(330, 640), (460, 480), (660, 430), (920, 420), (1120, 460), (1280, 540), (1400, 660),
-               (1560, 780), (1680, 860), (1720, 960), (1680, 1080), (1580, 1160), (1440, 1240), (1280, 1300),
-               (1120, 1280), (900, 1240), (720, 1140), (500, 1040), (360, 940), (320, 800)]
-PAD_LINE = 28            # 肉球の線の太さ（画素, ≒1.3mm）
-PAD_RATIO = 1.48         # 赤/緑 の比がこれ以上を肉球とみなす
-FUR_LINE = 16            # 毛のりんかく線（画素）
-FUR_GAP = 90             # 肉球のまわりの毛の厚み（画素）
-
-
 @functools.lru_cache()
-def paw_shape():
-    """肉球の写真 → スケッチ風の黒い図形（画素単位, 指が上, y は上向き）。"""
-    from PIL import Image, ImageDraw, ImageOps
-    from scipy import ndimage as ndi
-    from skimage import morphology
-    im = ImageOps.exif_transpose(Image.open(PAW_PHOTO)).convert("RGB")
-    a = np.asarray(im).astype(float)
-    r, g = (ndi.gaussian_filter(a[..., i], 4) for i in range(2))
-    gray = ndi.gaussian_filter(a.mean(2), 2)
-    ratio = r / (g + 1)                                     # 肉球は赤みが強い（影でも比は残る）
-    yy, xx = np.mgrid[0:gray.shape[0], 0:gray.shape[1]]
-    pads = np.zeros(gray.shape, bool)
-    for cx, cy, rx, ry in PAW_PADS:
-        roi = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2 < 1
-        m = morphology.opening(roi & (ratio > PAD_RATIO), morphology.disk(10))
-        lab, n = ndi.label(m)
-        if n:
-            m = lab == (np.argmax(ndi.sum(m, lab, range(1, n + 1))) + 1)
-        pads |= ndi.binary_fill_holes(morphology.closing(m, morphology.disk(15)))
-    mk = Image.new("L", im.size, 0)
-    ImageDraw.Draw(mk).polygon(PAW_OUTLINE, fill=255)
-    near = np.asarray(mk) > 0
-    moles = (gray < 42) & near & morphology.dilation(pads, morphology.disk(40))
-    moles = morphology.remove_small_objects(morphology.opening(moles, morphology.disk(3)), max_size=300)
-    # 指を上に（写真を反時計回りに 90°）
-    pads, moles = np.rot90(pads, 1), np.rot90(moles, 1)
-    P = mb.mask_to_shape(pads, 1.0)
-    M = mb.mask_to_shape(moles, 1.0)
-    P = P.buffer(6).buffer(-12).buffer(6)                   # 線をなめらかに
-    pad_lines = P.difference(P.buffer(-PAD_LINE))
-    # 毛: 肉球それぞれのまわりに毛をまとわせた形（指ごとにふくらむ）を、ふわっとした輪郭にする
-    body = shapely.union_all([q.buffer(FUR_GAP, quad_segs=24) for q in getattr(P, "geoms", [P])])
-    body = body.buffer(60).buffer(-60)                       # 指のあいだを少しだけつなぐ
-    body = max(getattr(body, "geoms", [body]), key=lambda q: q.area)
-    ring = body.exterior
-    rnd = random.Random(15)
-    wisps = []
-    n = int(ring.length / 26)
-    for i in range(n):
-        d = i * ring.length / n + rnd.uniform(-6, 6)
-        p0, p1 = ring.interpolate(d), ring.interpolate(d + 2)
-        tx, ty = p1.x - p0.x, p1.y - p0.y
-        L = (tx * tx + ty * ty) ** 0.5 or 1
-        tx, ty = tx / L, ty / L
-        nx_, ny_ = ty, -tx                                   # 外向きの法線
-        if body.contains(Point(p0.x + nx_ * 5, p0.y + ny_ * 5)):
-            nx_, ny_ = -nx_, -ny_
-        # 少し曲がった毛束: 根元から外へ、毛先は横に流れる
-        ln = rnd.uniform(18, 42)
-        lean = rnd.uniform(-0.6, 0.6)
-        mid = (p0.x + nx_ * ln * 0.55 + tx * lean * ln * 0.2, p0.y + ny_ * ln * 0.55 + ty * lean * ln * 0.2)
-        tip = (p0.x + nx_ * ln + tx * lean * ln * 0.6, p0.y + ny_ * ln + ty * lean * ln * 0.6)
-        wisps.append(shapely.LineString([(p0.x, p0.y), mid, tip]).buffer(4.5, cap_style="round"))
-    fur = shapely.union_all([ring.buffer(FUR_LINE / 2), *wisps])
-    hairs = []
-    return shapely.union_all([pad_lines, M.buffer(9), fur, *hairs]).buffer(0)
-
-
 def art(face):
-    """面の絵（黒い部分）: 写真の黒い毛＋舌の縁取り＋目＋額縁の線。板の見える部分の中央 (0, 高さ/2) 基準。"""
+    """面の絵（黒い部分）: 写真から写し取った線画＋額縁の線。板の見える部分の中央 (0, 高さ/2) 基準。"""
     w, h = panel_size(face)
-    fit = (w - 2 * (FRAME_INSET + FRAME_W + ART_MARGIN), h - 2 * (FRAME_INSET + FRAME_W + ART_MARGIN))
-    photo = PHOTOS[face]
-    if photo == "paw":
-        (b,), _ = fit_to([paw_shape()], [], fit)
-        p = shapely.Polygon()
-    else:
-        art0 = mb.placed_art(photo)
-        (b, p), eyes = fit_to([art0[0], art0[1]], placed_eyes(photo), fit)
-        b = ma.clean(b, smooth=SMOOTH, min_area=3.0, min_hole=0.3)
-        b = draw_eyes(b, eyes)
-        if not p.is_empty:
-            p = ma.clean(p, smooth=SMOOTH)
-            b = shapely.union_all([b.difference(p), p.difference(p.buffer(-TONGUE_LINE))]).buffer(0)
-    b = affinity.translate(b, 0, h / 2 - ma.H / 2)
+    fw, fh = w - 2 * (FRAME_INSET + FRAME_W + ART_MARGIN), h - 2 * (FRAME_INSET + FRAME_W + ART_MARGIN)
+    key = PHOTOS[face]
+    ar = bs.aspect(key)
+    width = min(fw, fh * ar)                      # 縦横比を保って枠に収める
+    b = mb.mask_to_shape(bs.sketch(key, width), bs.PX_MM)          # 左上が原点, 下向きが -y
+    x0, y0, x1, y1 = b.bounds
+    b = affinity.translate(b, -(x0 + x1) / 2, h / 2 - (y0 + y1) / 2)
     r = shapely.box(-w / 2 + FRAME_INSET, FRAME_INSET, w / 2 - FRAME_INSET, h - FRAME_INSET)
     frame = r.difference(r.buffer(-FRAME_W, join_style="mitre"))
     g = shapely.union_all([b, frame]).buffer(0)
     # ほとんど接している点や細すぎるすき間をなくして、立体にできる形に整える
     g = g.buffer(0.02, join_style="round").buffer(-0.02, join_style="round").simplify(0.01).buffer(0)
-    return shapely.union_all([q for q in getattr(g, "geoms", [g]) if q.area > 0.5])
+    return shapely.union_all([q for q in getattr(g, "geoms", [g]) if q.area > 0.2])
 
 
 def bottom_text():
