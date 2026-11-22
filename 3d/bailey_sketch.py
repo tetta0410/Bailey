@@ -34,11 +34,13 @@ SIT_OUTLINE = [(x * 2, y * 2) for x, y in [
 PAW2_OUTLINE = [(x * 2, y * 2) for x, y in [
     (110, 300), (140, 230), (220, 180), (320, 160), (440, 150), (540, 160), (610, 190), (600, 260), (590, 330),
     (600, 420), (570, 480), (520, 520), (440, 520), (360, 500), (270, 470), (200, 440), (150, 400), (120, 350)]]
+DARK = {"sit": 0.40}    # 黒い毛が日に当たって灰色に写っている写真は、黒く塗る範囲を少し広げる
+EYE_BRIGHT = {"tongue2": 0.40, "sit": 0.42, "nose": 0.40}   # 目のまわりで白にする明るさ（犬の中で正規化した 0..1）
 # 目のまわり（元の写真の画素: 中心x, 中心y, 半径）。ここだけ黒い毛の中の細部を白で抜く
 EYE_ZONES = {
     "tongue2": [(478, 514, 75), (857, 475, 72)],
     "nose": [(840, 560, 75)],
-    "sit": [(596, 624, 80), (926, 580, 75)],
+    "sit": [(596, 624, 58), (926, 580, 52)],
 }
 PAW_OUTLINE = [(330, 640), (460, 480), (660, 430), (920, 420), (1120, 460), (1280, 540), (1400, 660),
                (1560, 780), (1680, 860), (1720, 960), (1680, 1080), (1580, 1160), (1440, 1240), (1280, 1300),
@@ -138,7 +140,7 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     s = s_mm / PX_MM
 
     lines = (ndi.gaussian_filter(g, s) - ndi.gaussian_filter(g, 1.6 * s)) < -edge   # 明暗の境目の暗い側
-    fill = ndi.gaussian_filter(g, 1.0) < dark                                      # 暗い毛
+    fill = ndi.gaussian_filter(g, 1.0) < DARK.get(key, dark)                       # 暗い毛
     red = ndi.gaussian_filter(f[..., 0] - (f[..., 1] + f[..., 2]) / 2, 2)
     pinkish = red > 55                                                             # 舌など
     fill &= ~pinkish
@@ -170,17 +172,12 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     pk_line = pk ^ ndi.binary_erosion(pk, iterations=int(0.5 / PX_MM))             # 舌・肉球のふち
     black = ((fill | lines | pk_line) & m) | sil
 
-    # 目のまわりだけ: 局所的にコントラストを上げて、黒い毛の中の明るい線（目のふち）を白で抜く
-    gc = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply((g * 255).astype(np.uint8)) / 255.0
-    sw = s * 0.7
-    white_lines = ((ndi.gaussian_filter(gc, sw) - ndi.gaussian_filter(gc, 1.6 * sw)) > 0.03) & fill & eye
-    black &= ~morphology.remove_small_objects(white_lines, max_size=int((0.5 / PX_MM) ** 2))
-    # 目の光など小さな明るい点は、印刷で出る 0.5mm まで広げて残す
-    peak = ((gc - ndi.gaussian_filter(gc, 6 * s)) > 0.22) & ndi.binary_dilation(fill, iterations=int(0.6 / PX_MM)) & eye
-    lab, n = ndi.label(peak)
-    sizes = ndi.sum(peak, lab, range(1, n + 1))
-    small = np.isin(lab, np.nonzero(sizes < (0.8 / PX_MM) ** 2)[0] + 1)
-    black &= ~ndi.binary_dilation(small, structure=morphology.disk(int(0.22 / PX_MM)))
+    # 目のまわりだけ: 写真で実際に明るい所（目の光・瞳の下の明るい縁）だけを白で抜く。
+    # コントラストを強めたりせず、写真の明るさそのものを使う。
+    bright = (ndi.gaussian_filter(g, 0.08 / PX_MM) > EYE_BRIGHT.get(key, 0.4)) & fill & eye
+    bright = morphology.remove_small_objects(bright, max_size=int((0.25 / PX_MM) ** 2))
+    # 印刷で潰れない大きさ（0.4mm 程度）に少しだけ広げる
+    black &= ~ndi.binary_dilation(bright, structure=morphology.disk(int(0.1 / PX_MM)))
 
     # 印刷できない小さな黒い点を消し、小さすぎる白い穴は埋める
     black = morphology.remove_small_objects(black, max_size=int((0.6 / PX_MM) ** 2))
