@@ -4,7 +4,8 @@
   - 背景を外して犬だけにする（GrabCut。写真ごとに犬のまわりの目安を指定）
   - 暗い毛は黒く塗る
   - 明暗の境目（目の縁・毛の流れ・ヒゲ・口元）を黒い線で写す
-  - 黒い毛の中の明るい線（目のふち・毛並み）や目の光は白で抜く
+  - 目のまわりだけ、黒い毛の中の明るい線（目のふち）や目の光を白で抜く
+    （黒い毛全体でやると白く飛んで見えるので、毛は黒のまま）
   - 舌・肉球など赤みのある所は塗らず、ふちを線で描く
 最後に 0.4mm ノズルで印刷できる太さ・大きさにそろえる。
 """
@@ -26,6 +27,19 @@ NOSE_OUTLINE = [(330, 340), (390, 310), (470, 350), (560, 420), (630, 420), (710
 TONGUE_OUTLINE = [(100, 0), (540, 0), (600, 230), (700, 230), (770, 0), (1180, 0), (1170, 250),
                   (1120, 500), (1090, 650), (1060, 800), (1080, 1000), (1110, 1290), (390, 1290),
                   (400, 1100), (330, 850), (250, 650), (170, 450), (110, 250)]
+SIT_OUTLINE = [(x * 2, y * 2) for x, y in [
+    (100, 45), (160, 55), (250, 150), (330, 170), (410, 130), (470, 40), (520, 0), (540, 80), (560, 200),
+    (580, 300), (560, 360), (540, 430), (520, 520), (520, 620), (500, 660), (430, 700), (410, 720), (300, 730),
+    (250, 720), (220, 640), (200, 580), (180, 520), (170, 440), (150, 350), (120, 250), (100, 150)]]
+PAW2_OUTLINE = [(x * 2, y * 2) for x, y in [
+    (110, 300), (140, 230), (220, 180), (320, 160), (440, 150), (540, 160), (610, 190), (600, 260), (590, 330),
+    (600, 420), (570, 480), (520, 520), (440, 520), (360, 500), (270, 470), (200, 440), (150, 400), (120, 350)]]
+# 目のまわり（元の写真の画素: 中心x, 中心y, 半径）。ここだけ黒い毛の中の細部を白で抜く
+EYE_ZONES = {
+    "tongue2": [(478, 514, 75), (857, 475, 72)],
+    "nose": [(840, 560, 75)],
+    "sit": [(596, 624, 80), (926, 580, 75)],
+}
 PAW_OUTLINE = [(330, 640), (460, 480), (660, 430), (920, 420), (1120, 460), (1280, 540), (1400, 660),
                (1560, 780), (1680, 860), (1720, 960), (1680, 1080), (1580, 1160), (1440, 1240), (1280, 1300),
                (1120, 1280), (900, 1240), (720, 1140), (500, 1040), (360, 940), (320, 800)]
@@ -64,8 +78,9 @@ def _grabcut(a, poly, scale=800):
 
 
 def prepare(key):
-    """写真 → (画像, 犬の形, 輪郭線を引かない所)。犬の外枠で切り抜いて返す。"""
+    """写真 → (画像, 犬の形, 輪郭線を引かない所, 目のまわり)。犬の外枠で切り抜いて返す。"""
     nol = None
+    rot = 0
     if key == "nose":
         a = _load("bailey_nose.jpg")
         m = _grabcut(a, NOSE_OUTLINE)
@@ -80,28 +95,42 @@ def prepare(key):
         green = (f[..., 1] > f[..., 0] + 10) & (f[..., 1] > f[..., 2] + 5)   # 切り抜きの縁に残った芝生
         m = ndi.binary_fill_holes(ndi.binary_closing((a.min(2) < 235) & ~green, iterations=3))
         m = ndi.binary_opening(_largest(m), iterations=4)
+    elif key == "sit":
+        a = _load("bailey_sit.jpg")[:1480]                     # 足先まで
+        m = _grabcut(a, SIT_OUTLINE) & _poly(a.shape, SIT_OUTLINE)
     elif key == "paw":
         a = _load("bailey_paw.jpg")
         m = _grabcut(a, PAW_OUTLINE)
-        a, m = np.ascontiguousarray(np.rot90(a, 1)), np.ascontiguousarray(np.rot90(m, 1))   # 指を上に
+        rot = 1                                                 # 指を上に
+    elif key == "paw2":
+        a = _load("bailey_paw2c.jpg")
+        m = _grabcut(a, PAW2_OUTLINE) & _poly(a.shape, PAW2_OUTLINE)
+        rot = -1                                                # 指を上に
     else:
         raise ValueError(key)
     if nol is None:
         nol = np.zeros(m.shape, bool)
+    eye = np.zeros(m.shape, bool)
+    yy, xx = np.mgrid[0:m.shape[0], 0:m.shape[1]]
+    for cx, cy, r in EYE_ZONES.get(key, []):
+        eye |= (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
+    if rot:
+        a, m, nol, eye = (np.ascontiguousarray(np.rot90(v, rot)) for v in (a, m, nol, eye))
     ys, xs = np.nonzero(m)
     sl = (slice(ys.min(), ys.max() + 1), slice(xs.min(), xs.max() + 1))
-    return a[sl], m[sl], nol[sl]
+    return a[sl], m[sl], nol[sl], eye[sl]
 
 
 def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     """写真 → 白黒の線画（True=黒）。1画素 = PX_MM。"""
-    paw = key == "paw"
-    a, m, nol = prepare(key)
+    paw = key in ("paw", "paw2")
+    a, m, nol, eye = prepare(key)
     k = width_mm / PX_MM / a.shape[1]
     size = (int(a.shape[1] * k), int(a.shape[0] * k))
     a = cv2.resize(a, size, interpolation=cv2.INTER_AREA)
     m = cv2.resize(m.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
     nol = cv2.resize(nol.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+    eye = cv2.resize(eye.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
     f = a.astype(float)
     g = f.mean(2) / 255
     lo, hi = np.percentile(g[m], [2, 98])                      # 写真ごとの露出差をそろえる
@@ -114,8 +143,19 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     pinkish = red > 55                                                             # 舌など
     fill &= ~pinkish
     if paw:
-        pinkish = ndi.gaussian_filter(f[..., 0], 4) / (ndi.gaussian_filter(f[..., 1], 4) + 1) > 1.48
+        pinkish = ndi.gaussian_filter(f[..., 0], 4) / (ndi.gaussian_filter(f[..., 1], 4) + 1) > (1.48 if key == "paw" else 1.3)
         fill = ndi.gaussian_filter(f.mean(2), 1.5) < 45                           # 暗い写真なので本当に黒いホクロだけ
+        if key == "paw2":
+            fill[:] = False                                                       # ホクロのない足。影の肉球は塗らない
+            # 白い毛の流れ: 細かい明暗の境目のうち、細長いもの（毛の筋）だけを線にする
+            fs = 0.12 / PX_MM
+            dd = ndi.gaussian_filter(g, fs) - ndi.gaussian_filter(g, 2.5 * fs)
+            strands = (dd < -0.035) & ~ndi.binary_dilation(pinkish, iterations=int(0.6 / PX_MM))
+            from skimage import measure
+            lab = measure.label(strands)
+            keep = [r.label for r in measure.regionprops(lab)
+                    if r.area > (0.5 / PX_MM) ** 2 and r.axis_major_length > 4 * max(r.axis_minor_length, 1)]
+            lines |= np.isin(lab, keep)
         r2 = ndi.gaussian_filter(red / 255, s) - ndi.gaussian_filter(red / 255, 1.6 * s)
         lines |= np.abs(r2) > 0.03
 
@@ -130,13 +170,13 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     pk_line = pk ^ ndi.binary_erosion(pk, iterations=int(0.5 / PX_MM))             # 舌・肉球のふち
     black = ((fill | lines | pk_line) & m) | sil
 
-    # 黒い毛の中の細部（目のふち・毛並み）: 局所的にコントラストを上げて、明るい線を白で抜く
+    # 目のまわりだけ: 局所的にコントラストを上げて、黒い毛の中の明るい線（目のふち）を白で抜く
     gc = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply((g * 255).astype(np.uint8)) / 255.0
     sw = s * 0.7
-    white_lines = ((ndi.gaussian_filter(gc, sw) - ndi.gaussian_filter(gc, 1.6 * sw)) > 0.03) & fill
+    white_lines = ((ndi.gaussian_filter(gc, sw) - ndi.gaussian_filter(gc, 1.6 * sw)) > 0.03) & fill & eye
     black &= ~morphology.remove_small_objects(white_lines, max_size=int((0.5 / PX_MM) ** 2))
     # 目の光など小さな明るい点は、印刷で出る 0.5mm まで広げて残す
-    peak = ((gc - ndi.gaussian_filter(gc, 6 * s)) > 0.22) & ndi.binary_dilation(fill, iterations=int(0.6 / PX_MM))
+    peak = ((gc - ndi.gaussian_filter(gc, 6 * s)) > 0.22) & ndi.binary_dilation(fill, iterations=int(0.6 / PX_MM)) & eye
     lab, n = ndi.label(peak)
     sizes = ndi.sum(peak, lab, range(1, n + 1))
     small = np.isin(lab, np.nonzero(sizes < (0.8 / PX_MM) ** 2)[0] + 1)
@@ -149,5 +189,5 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
 
 
 def aspect(key):
-    a, _, _ = prepare(key)
+    a = prepare(key)[0]
     return a.shape[1] / a.shape[0]
