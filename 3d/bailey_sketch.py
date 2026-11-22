@@ -34,6 +34,11 @@ SIT_OUTLINE = [(x * 2, y * 2) for x, y in [
 SLEEP2_OUTLINE = [(430, 220), (470, 215), (580, 60), (610, 0), (840, 0), (920, 200), (1000, 300), (1150, 350),
                   (1280, 450), (1320, 620), (1430, 780), (1570, 840), (1580, 980), (1450, 1060), (1250, 1080),
                   (1050, 1020), (870, 950), (780, 1100), (600, 1180), (430, 1190)]     # 顔まわり（体は外す）
+# 自動の切り抜きで外れてしまう所を、写真を見て足す: 口の下〜あごの白い毛、向こう側の目のまわりの黒い毛
+SLEEP2_ADD = [
+    [(1100, 980), (1300, 1010), (1430, 1050), (1560, 990), (1450, 1100), (1350, 1132), (1250, 1110), (1150, 1040)],
+    [(1240, 440), (1300, 470), (1322, 560), (1320, 650), (1292, 672), (1260, 600)],
+]
 PAW2_OUTLINE = [(x * 2, y * 2) for x, y in [
     (110, 300), (140, 230), (220, 180), (320, 160), (440, 150), (540, 160), (610, 190), (600, 260), (590, 330),
     (600, 420), (570, 480), (520, 520), (440, 520), (360, 500), (270, 470), (200, 440), (150, 400), (120, 350)]]
@@ -96,6 +101,7 @@ def _grabcut(a, poly, scale=800):
 def prepare(key):
     """写真 → (画像, 犬の形, 輪郭線を引かない所, 目のまわり)。犬の外枠で切り抜いて返す。"""
     nol = None
+    fillzone = None
     rot = 0
     if key == "nose":
         a = _load("bailey_nose.jpg")
@@ -117,8 +123,15 @@ def prepare(key):
     elif key == "sleep2":
         a = _load("bailey_sleep2.jpg")
         m = _grabcut(a, SLEEP2_OUTLINE) & _poly(a.shape, SLEEP2_OUTLINE)
+        chin, far_eye = SLEEP2_ADD
+        m |= _poly(a.shape, chin)
+        far = _poly(a.shape, far_eye) & (ndi.gaussian_filter(a.mean(2), 2) < 110)   # 濃い毛の所だけ
+        m |= far
+        fillzone = far
         nol = np.zeros(m.shape, bool)
         nol[1080:, :800] = True                                # 首の下は写真の途中で切るので輪郭線を引かない
+        nol |= ndi.binary_dilation(_poly(a.shape, far_eye), iterations=12)   # 向こう側の目は輪郭線でなく毛の黒で見せる
+        m = ndi.binary_fill_holes(m)
     elif key == "paw":
         a = _load("bailey_paw.jpg")
         m = _grabcut(a, PAW_OUTLINE)
@@ -139,6 +152,8 @@ def prepare(key):
     for cx, cy, r in EYEBALLS.get(key, []):
         ball |= (xx - cx) ** 2 + (yy - cy) ** 2 < r * r
     eye = np.where(ball, 2, eye.astype(np.uint8))                          # 0=外, 1=目のまわり, 2=目玉
+    if fillzone is not None:
+        eye[fillzone] = 3                                                    # 3=写真の濃い毛をそのまま黒く塗る所
     if rot:
         a, m, nol, eye = (np.ascontiguousarray(np.rot90(v, rot)) for v in (a, m, nol, eye))
     ys, xs = np.nonzero(m)
@@ -157,7 +172,8 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
     nol = cv2.resize(nol.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
     eye = cv2.resize(eye.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST)
     eyeball = eye == 2
-    eye = eye > 0
+    fillzone = eye == 3
+    eye = (eye == 1) | (eye == 2)
     f = a.astype(float)
     g = f.mean(2) / 255
     lo, hi = np.percentile(g[m], [2, 98])                      # 写真ごとの露出差をそろえる
@@ -166,6 +182,7 @@ def sketch(key, width_mm, dark=0.30, edge=0.035, s_mm=0.22):
 
     lines = (ndi.gaussian_filter(g, s) - ndi.gaussian_filter(g, 1.6 * s)) < -edge   # 明暗の境目の暗い側
     fill = ndi.gaussian_filter(g, 1.0) < DARK.get(key, dark)                       # 暗い毛
+    fill |= fillzone
     red = ndi.gaussian_filter(f[..., 0] - (f[..., 1] + f[..., 2]) / 2, 2)
     pinkish = (red > 55) & (key not in NO_PINK)                                    # 舌など
     fill &= ~pinkish
