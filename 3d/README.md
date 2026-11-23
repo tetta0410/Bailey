@@ -54,3 +54,8 @@ python3 3d/preview.py       # out/preview.png を描く
 
 
 ベイリーの写真入りペン立て（`bailey_penholder*`）は、どれも真ん中の仕切りで左右2部屋（仕切りは縁より10mm低い）。
+
+
+## ベイリーの鼻のキーホルダー
+
+`out/bailey_nose_keychain.3mf`（`.stl`）: 写真 photos/bailey_nose_close.jpg から鼻の輪郭・左右の鼻の穴・真ん中の縦の溝を写した立体（32×24×11.7mm＋キーリングの輪）。表面は写真で測った約1mmのシボ。黒1色（nose_black＝フィラメント2）、裏が平らなので置いたまま印刷・サポートなし。0.08〜0.12mm 推奨。`python3 3d/make_bailey_nose_keychain.py`
