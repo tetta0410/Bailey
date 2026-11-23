@@ -46,6 +46,7 @@ BOTTOM_SIZES = [11.0, 5.0]
 BOTTOM_DEPTH = 0.6
 
 LAYER = 0.2
+WHITE_FIL, BLACK_FIL = 1, 2    # Bambu Studio のフィラメント番号（いまの AMS lite: 1=白, 2=黒）
 
 
 def panel_size(face):
@@ -97,7 +98,7 @@ def build_plates():
     mp.art_for = lambda face: art(face)     # 板の絵をこの完成版の絵に差し替える
     box, text = with_bottom_text(mp.make_box())
     write_3mf(os.path.join(OUT, "bailey_final_box.3mf"),
-              [("bailey_final_box", (90, 90), [("box_black", box, 1), ("bottom_text_white", text, 2)])])
+              [("bailey_final_box", (90, 90), [("box_black", box, BLACK_FIL), ("bottom_text_white", text, WHITE_FIL)])])
     plates = {f: mp.plate(f) for f in mp.PW}
     centers = {"front": (49, 46), "back": (127, 46), "left": (41.5, 135), "right": (104.5, 135)}
     write_3mf(os.path.join(OUT, "bailey_final_plates.3mf"),

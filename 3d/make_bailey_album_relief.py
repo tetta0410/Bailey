@@ -47,6 +47,8 @@ FRAME = 2.5              # 板のまわりの黒い縁 (mm)
 GRID = 0.15              # 厚みマップの細かさ (mm)
 BLEED_LEFT = {"sleep"}    # 左の縁から首が出ているように、左に寄せて縁に付ける絵
 RIGHT_ROOM = 1.5         # そのときの右側の余白 (mm)
+# Bambu Studio のフィラメント番号（いまの AMS lite: 1=白, 2=黒, 3=赤, 4=緑）
+WHITE_FIL, BLACK_FIL = 1, 2
 KEEP = 0.35              # メッシュの面数をどこまで減らすか（残す割合）
 
 
@@ -145,7 +147,7 @@ def gray_test():
     black = black.union(extrude(shapely.difference(shapely.box(0, 0, steps * sw + 4, sh + 4),
                                                    shapely.box(2, 2, 2 + steps * sw, 2 + sh)), W_MAX, ZB))
     write_3mf(os.path.join(OUT, "bailey_illust_graytest.3mf"),
-              [("graytest", (90, 90), [("test_black", black, 1), ("test_white", white, 2)])])
+              [("graytest", (90, 90), [("test_black", black, BLACK_FIL), ("test_white", white, WHITE_FIL)])])
     return black, white
 
 
@@ -157,7 +159,7 @@ def main():
     for f in ("front", "left", "right", "back"):
         black, white, b = plate(f)
         plates[f] = (black, white, b)
-        objs.append((f"plate_{f}", centers[f], [("plate_black", black, 1), ("plate_white", white, 2)]))
+        objs.append((f"plate_{f}", centers[f], [("plate_black", black, BLACK_FIL), ("plate_white", white, WHITE_FIL)]))
         print(f"{f:5s} black {black.extents.round(1)} watertight={black.is_watertight}  "
               f"white faces={len(white.faces)} watertight={white.is_watertight}")
     write_3mf(os.path.join(OUT, "bailey_illust_plates.3mf"), objs)
