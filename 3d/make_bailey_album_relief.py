@@ -151,7 +151,8 @@ def gray_test():
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    centers = {"front": (49, 46), "back": (127, 46), "left": (41.5, 135), "right": (104.5, 135)}
+    # 180mm角のビルドプレートに 2×2 で並べ、右側に幅 42mm の空きを残す（色替え用のプライムタワーを置く場所）
+    centers = {"front": (39, 44.5), "left": (108.5, 44.5), "back": (39, 132.5), "right": (108.5, 132.5)}
     objs, plates = [], {}
     for f in ("front", "left", "right", "back"):
         black, white, b = plate(f)
