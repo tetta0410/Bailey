@@ -59,3 +59,13 @@ python3 3d/preview.py       # out/preview.png を描く
 ## ベイリーの鼻のキーホルダー
 
 `out/bailey_nose_keychain.3mf`（`.stl`）: 写真 photos/bailey_nose_close.jpg から鼻の輪郭・左右の鼻の穴・真ん中の縦の溝を写した立体（32×24×11.7mm＋キーリングの輪）。表面は写真で測った約1mmのシボ。黒1色（nose_black＝フィラメント2）、裏が平らなので置いたまま印刷・サポートなし。0.08〜0.12mm 推奨。`python3 3d/make_bailey_nose_keychain.py`
+
+## ベイリーの看板「Welcome to Bailey's House」
+
+`python3 3d/make_bailey_sign.py`（`--preview` で見え方だけ）。イラスト版と同じく黒の上に白を重ねて濃淡、舌だけ赤。厚さ4mm、四隅にφ5mmの取り付け穴。
+色: sign_white=1(白), sign_black=2(黒), tongue_red=3(赤)。0.08mm Extra Fine、絵の面を上、サポートなし、プライムタワーはオフ（板がプレートいっぱいのため）。
+
+| ファイル | 内容 | 大きさ |
+|---|---|---|
+| `bailey_sign_A.3mf` | 1枚もの。左に全身、右に文字 | 174×174×4 mm |
+| `bailey_sign_B_left.3mf` + `bailey_sign_B_right.3mf` | 2枚つなぎ。左に顔、右に文字。裏側のアリ継ぎ（左の板の右に出たほぞを、右の板の裏のありに上からはめる）| 合わせて 340×174×4 mm |
