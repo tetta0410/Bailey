@@ -3,10 +3,10 @@
 ペン立てのイラスト版と同じく、黒の上に白を重ねる厚みで濃淡を出す。舌だけは白の代わりに赤を重ねる
 （赤が厚い所は赤、薄い所は黒が透けて暗い赤）。文字と縁は黒。
 
-  A: 1枚もの  174×174mm … 左にベイリーの全身、右に文字
+  A: 1枚もの  174×174mm … 左にベイリーの全身、右に文字（舌も白黒）。上下左右のまん中にワイヤー穴
   B: 2枚つなぎ 340×174mm … 左の板にベイリーの顔（大きく）、右の板に文字。
      裏側のアリ継ぎ（あり・ほぞ）で横につなぐ（表からは見えない）
-どちらも四隅に、結束バンドや針金を通す穴（φ5mm）。
+B は四隅に結束バンド用の穴（φ3mm）。B を作るときは --with-b。
 
 板は絵の面を上にして印刷する（裏が平ら）。色: 1=白, 2=黒, 3=赤（いまの AMS lite の並び）。
 
@@ -45,7 +45,7 @@ ZB = T - W_MAX          # 黒→白（赤）に替わる高さ
 LAYER = 0.08
 FRAME = 3.0             # 黒い縁
 GRID = 0.2              # 厚みマップの細かさ（0.4mm ノズルには十分）
-HOLE_R, RING_R, HOLE_IN = 2.5, 4.3, 8.0       # 取り付け穴の半径・黒い輪の半径・縁からの位置
+HOLE_R, RING_R, HOLE_IN = 1.5, 2.8, 6.0       # ワイヤー穴の半径（φ3mm）・黒い輪の半径・縁からの位置
 KEEP = 0.3
 
 # 舌の輪郭（bailey_illust.load("tongue") の画素座標）
@@ -116,6 +116,11 @@ def corner_holes(w, h):
     return [(HOLE_IN, HOLE_IN), (w - HOLE_IN, HOLE_IN), (HOLE_IN, h - HOLE_IN), (w - HOLE_IN, h - HOLE_IN)]
 
 
+def edge_holes(w, h):
+    """上下左右の辺のまん中（ワイヤー用）。"""
+    return [(w / 2, HOLE_IN), (w / 2, h - HOLE_IN), (HOLE_IN, h / 2), (w - HOLE_IN, h / 2)]
+
+
 def text_block(c, cx, cy, width):
     """WELCOME / to / Bailey's / HOUSE を (cx, cy) を中心に並べる（幅 width）。"""
     s = width / 72.0
@@ -129,9 +134,9 @@ def text_block(c, cx, cy, width):
 def layout_A(px):
     W = H = 174.0
     c = Canvas(W, H, px)
-    c.illust("tongue", (15, 12, 92, 162), tongue=True)
-    text_block(c, 133, H / 2, 70)
-    holes = corner_holes(W, H)
+    c.illust("tongue", (14, 13, 90, 161))
+    text_block(c, 130, H / 2, 62)
+    holes = edge_holes(W, H)
     c.finish(holes)
     return c, holes
 
@@ -220,21 +225,28 @@ def build(layout, joint=None):
 
 # ---------------------------------------------------------------- 見え方
 def appearance(layout, px=0.1):
-    c, _ = layout(px)
+    c, holes = layout(px)
     a = cv2.GaussianBlur(np.clip(np.round(c.b * W_MAX / LAYER) * LAYER / W_MAX, 0, 1), (0, 0), 0.2 / px)
     black = np.array([26, 26, 28.0])
     top = np.where(c.red[..., None], np.array([196, 32, 38.0]), np.array([240, 238, 232.0]))
     img = black + (top - black) * a[..., None]
     yy, xx = np.mgrid[0:c.ny, 0:c.nx] * px
-    for hx, hy in corner_holes(c.w, c.h):
+    for hx, hy in holes:
         img[(xx - hx) ** 2 + (yy - hy) ** 2 <= HOLE_R ** 2] = (150, 165, 175)   # 穴（フェンスが見える）
     return Image.fromarray(img.astype(np.uint8))
 
 
-def main(build_meshes=True):
+def main(build_meshes=True, with_b=False):
     os.makedirs(OUT, exist_ok=True)
     A = appearance(layout_A)
     A.save(os.path.join(OUT, "preview_bailey_sign_A.png"))
+    if not with_b:                                  # いまは1枚もの（A）だけ作る
+        if build_meshes:
+            parts = build(layout_A)
+            write_3mf(os.path.join(OUT, "bailey_sign_A.3mf"), [("bailey_sign_A", (90, 90), parts)])
+            for n, m, _ in parts:
+                print(f"A        {n:11s} {m.extents.round(1)} faces={len(m.faces)} watertight={m.is_watertight}")
+        return
     L, R = appearance(layout_B_left), appearance(layout_B_right)
     B = Image.new("RGB", (L.width + R.width, L.height))
     B.paste(L, (0, 0)); B.paste(R, (L.width, 0))
@@ -256,4 +268,4 @@ def main(build_meshes=True):
 
 
 if __name__ == "__main__":
-    main(build_meshes="--preview" not in sys.argv)
+    main(build_meshes="--preview" not in sys.argv, with_b="--with-b" in sys.argv)

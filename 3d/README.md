@@ -62,10 +62,10 @@ python3 3d/preview.py       # out/preview.png を描く
 
 ## ベイリーの看板「Welcome to Bailey's House」
 
-`python3 3d/make_bailey_sign.py`（`--preview` で見え方だけ）。イラスト版と同じく黒の上に白を重ねて濃淡、舌だけ赤。厚さ4mm、四隅にφ5mmの取り付け穴。
-色: sign_white=1(白), sign_black=2(黒), tongue_red=3(赤)。0.08mm Extra Fine、絵の面を上、サポートなし、プライムタワーはオフ（板がプレートいっぱいのため）。
+`python3 3d/make_bailey_sign.py`（`--preview` で見え方だけ）。イラスト版と同じく黒の上に白を重ねて濃淡（舌も白黒）。厚さ4mm、上下左右の辺のまん中にワイヤー用のφ3mmの穴。
+色: sign_white=1(白), sign_black=2(黒)（B を `--with-b` で作ると舌が赤 tongue_red=3）。0.08mm Extra Fine、絵の面を上、サポートなし、プライムタワーはオフ（板がプレートいっぱいのため）。
 
 | ファイル | 内容 | 大きさ |
 |---|---|---|
-| `bailey_sign_A.3mf` | 1枚もの。左に全身、右に文字 | 174×174×4 mm |
+| `bailey_sign_A.3mf` | **1枚もの（採用）**。左に全身、右に文字、上下左右にワイヤー穴 | 174×174×4 mm |
 | `bailey_sign_B_left.3mf` + `bailey_sign_B_right.3mf` | 2枚つなぎ。左に顔、右に文字。裏側のアリ継ぎ（左の板の右に出たほぞを、右の板の裏のありに上からはめる）| 合わせて 340×174×4 mm |
