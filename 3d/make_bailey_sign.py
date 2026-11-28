@@ -3,7 +3,7 @@
 ペン立てのイラスト版と同じく、黒の上に白を重ねる厚みで濃淡を出す。舌だけは白の代わりに赤を重ねる
 （赤が厚い所は赤、薄い所は黒が透けて暗い赤）。文字と縁は黒。
 
-  A: 1枚もの  174×174mm … 左にベイリーの全身、右に文字（舌も白黒）。上下左右のまん中にワイヤー穴
+  A: 1枚もの  179×179mm（A1 mini のプレートいっぱい）… 左にベイリーの全身、右に文字（舌も白黒）。四隅にワイヤー穴
   B: 2枚つなぎ 340×174mm … 左の板にベイリーの顔（大きく）、右の板に文字。
      裏側のアリ継ぎ（あり・ほぞ）で横につなぐ（表からは見えない）
 B は四隅に結束バンド用の穴（φ3mm）。B を作るときは --with-b。
@@ -131,12 +131,16 @@ def text_block(c, cx, cy, width):
     c.text("HOUSE", SANS, 12 * s, cx, top + 72 * s, width)
 
 
+SIGN = 179.0            # A1 mini のプレート 180mm 角いっぱい（縁から 0.5mm ずつ残す）
+
+
 def layout_A(px):
-    W = H = 174.0
+    W = H = SIGN
+    k = SIGN / 174.0                                # 174mm で決めた配置をそのまま拡大
     c = Canvas(W, H, px)
-    c.illust("tongue", (14, 13, 90, 161))
-    text_block(c, 130, H / 2, 62)
-    holes = edge_holes(W, H)
+    c.illust("tongue", (14 * k, 13 * k, 90 * k, 161 * k))
+    text_block(c, 130 * k, H / 2, 62 * k)
+    holes = corner_holes(W, H)
     c.finish(holes)
     return c, holes
 
